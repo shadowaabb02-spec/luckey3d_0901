@@ -822,22 +822,23 @@ function finalizeModel(model) {
 }
 
 async function fetchModelParts() {
-    const buffers = [];
-    let loadedBytes = 0;
-
-    for (let index = 0; index < MODEL_PART_URLS.length; index += 1) {
-        if (loadingLabel) {
-            loadingLabel.textContent = `正在下载厂区模型 ${index + 1}/${MODEL_PART_URLS.length}`;
-        }
-        const response = await fetch(MODEL_PART_URLS[index]);
+    if (loadingLabel) loadingLabel.textContent = '正在并行下载厂区模型 0/2';
+    let completedParts = 0;
+    const buffers = await Promise.all(MODEL_PART_URLS.map(async (url) => {
+        const response = await fetch(url, { cache: 'force-cache' });
         if (!response.ok) {
-            throw new Error(`模型分片请求失败：${response.status} ${MODEL_PART_URLS[index]}`);
+            throw new Error(`模型分片请求失败：${response.status} ${url}`);
         }
         const buffer = await response.arrayBuffer();
-        buffers.push(buffer);
-        loadedBytes += buffer.byteLength;
-        updateLoading({ loaded: loadedBytes, total: 111576344 });
-    }
+        completedParts += 1;
+        if (loadingLabel) {
+            loadingLabel.textContent = `正在并行下载厂区模型 ${completedParts}/${MODEL_PART_URLS.length}`;
+        }
+        return buffer;
+    }));
+
+    const loadedBytes = buffers.reduce((total, buffer) => total + buffer.byteLength, 0);
+    updateLoading({ loaded: loadedBytes, total: 111576344 });
 
     const merged = new Uint8Array(loadedBytes);
     let offset = 0;
