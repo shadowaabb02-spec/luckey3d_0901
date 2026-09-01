@@ -13,6 +13,8 @@
 
 本仓库仅用于演示。页面中的运行状态、工艺指标、报警、预测和控制反馈为模拟数据，未连接 PLC、SCADA、数据库或现场设备，不能用于生产控制或运行决策。
 
+专家助手由 `server/expert_gateway.py` 提供受访问码保护的云端网关，部署配置见 `render.yaml`。API Key 和访问码必须作为 Render Secret 保存，禁止写入 GitHub、HTML 或 JavaScript。当前仍是本地规则与 LLM 辅助问答 V0，未接入项目文档 RAG 或实时工况。
+
 厂区模型为原始 `factory_demo_1024.glb` 的无损字节分片。两个分片在浏览器中重新合并后再由 Three.js 解析，用于绕过 GitHub 单文件 100 MB 的限制，并未进行减面或 Draco 压缩。
 
 ## 本地预览

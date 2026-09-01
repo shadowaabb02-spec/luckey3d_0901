@@ -208,13 +208,41 @@
         return String(window.EXPERT_GATEWAY_URL || '').trim().replace(/\/$/, '');
     }
 
+    function gatewayAccessToken(requestIfMissing) {
+        let token = '';
+        try {
+            token = sessionStorage.getItem('luckey-expert-access-token') || '';
+        } catch (error) {
+            token = '';
+        }
+        if (!token && requestIfMissing) {
+            token = String(window.prompt('请输入专家库访问码') || '').trim();
+            if (token) {
+                try {
+                    sessionStorage.setItem('luckey-expert-access-token', token);
+                } catch (error) {
+                    // 浏览器禁用会话存储时，仅在当前请求中使用访问码。
+                }
+            }
+        }
+        return token;
+    }
+
+    function clearGatewayAccessToken() {
+        try {
+            sessionStorage.removeItem('luckey-expert-access-token');
+        } catch (error) {
+            // 清理失败不影响回退到本地规则。
+        }
+    }
+
     function setStatus(mode) {
         const status = document.getElementById('expert-runtime-status');
         if (!status) return;
         const count = getRules().length;
         if (mode === 'connected' || gatewayHealth.state === 'ready') {
             status.className = 'expert-runtime-status is-connected';
-            status.textContent = `${modelLabel(gatewayHealth.model)} 已连接`;
+            status.textContent = `${modelLabel(gatewayHealth.model)} 已连接${gatewayHealth.requiresAccess && !gatewayAccessToken(false) ? ' · 需访问码' : ''}`;
             return;
         }
         status.className = 'expert-runtime-status';
@@ -366,9 +394,14 @@
     async function requestGateway(query, alarm) {
         const endpoint = gatewayUrl();
         if (!endpoint || gatewayHealth.state !== 'ready') return false;
+        const accessToken = gatewayHealth.requiresAccess ? gatewayAccessToken(true) : '';
+        if (gatewayHealth.requiresAccess && !accessToken) return false;
         const response = await fetch(endpoint + '/api/expert/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(accessToken ? { 'X-Expert-Access-Token': accessToken } : {})
+            },
             body: JSON.stringify({
                 question: query,
                 equipment: currentFilter(),
@@ -378,6 +411,7 @@
         });
         if (!response.ok) {
             const failure = await response.json().catch(() => ({}));
+            if (response.status === 401) clearGatewayAccessToken();
             const error = new Error(`专家网关返回 ${response.status}`);
             error.code = failure.error;
             throw error;
@@ -398,7 +432,11 @@
             window.clearTimeout(timeout);
             const payload = await response.json();
             if (response.ok && payload.status === 'ready') {
-                gatewayHealth = { state: 'ready', model: String(payload.model || '') };
+                gatewayHealth = {
+                    state: 'ready',
+                    model: String(payload.model || ''),
+                    requiresAccess: Boolean(payload.requiresAccess)
+                };
             } else {
                 gatewayHealth = { state: 'not_configured', model: '' };
             }
@@ -411,10 +449,15 @@
     async function sendFeedbackToGateway(record) {
         const endpoint = gatewayUrl();
         if (!endpoint || gatewayHealth.state !== 'ready') return;
+        const accessToken = gatewayHealth.requiresAccess ? gatewayAccessToken(false) : '';
+        if (gatewayHealth.requiresAccess && !accessToken) return;
         try {
             await fetch(endpoint + '/api/expert/feedback', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(accessToken ? { 'X-Expert-Access-Token': accessToken } : {})
+                },
                 body: JSON.stringify({
                     questionId: record.question || null,
                     helpful: record.helpful,
@@ -491,8 +534,17 @@
                 const usedGateway = await requestGateway(query, alarm);
                 if (!usedGateway) renderLocal(query, alarm);
             } catch (error) {
-                setStatus();
                 renderLocal(query, alarm);
+                if (error.code === 'access_denied') {
+                    gatewayHealth = {
+                        state: 'ready',
+                        model: gatewayHealth.model,
+                        requiresAccess: true
+                    };
+                    setStatus();
+                    window.alert('专家库访问码无效，请重新输入。');
+                    return;
+                }
                 const state = error.code === 'upstream_auth_rejected'
                     ? 'auth_rejected'
                     : error.code === 'upstream_temporarily_unavailable'
