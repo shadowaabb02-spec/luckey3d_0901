@@ -189,7 +189,7 @@ class ExpertGatewayHandler(BaseHTTPRequestHandler):
 
     def access_is_allowed(self) -> bool:
         expected = env("EXPERT_GATEWAY_ACCESS_TOKEN")
-        if not expected:
+        if not env_flag("EXPERT_GATEWAY_REQUIRE_ACCESS", bool(expected)):
             return True
         supplied = self.headers.get("X-Expert-Access-Token", "")
         return bool(supplied) and hmac.compare_digest(supplied, expected)
@@ -265,7 +265,10 @@ class ExpertGatewayHandler(BaseHTTPRequestHandler):
             "knowledge": "local_v0_no_rag",
             "webRetrieval": "disabled",
             "host": env("EXPERT_GATEWAY_MODE", "local_only"),
-            "requiresAccess": bool(env("EXPERT_GATEWAY_ACCESS_TOKEN")),
+            "requiresAccess": env_flag(
+                "EXPERT_GATEWAY_REQUIRE_ACCESS",
+                bool(env("EXPERT_GATEWAY_ACCESS_TOKEN")),
+            ),
         })
 
     def do_POST(self) -> None:  # noqa: N802

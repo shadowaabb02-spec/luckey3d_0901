@@ -11,8 +11,6 @@ services:
     envVars:
       - key: OPENCODE_GO_API_KEY
         sync: false
-      - key: EXPERT_GATEWAY_ACCESS_TOKEN
-        sync: false
       - key: OPENCODE_GO_BASE_URL
         value: https://opencode.ai/zen/go/v1
       - key: OPENCODE_GO_MODEL
@@ -21,6 +19,8 @@ services:
         value: https://shadowaabb02-spec.github.io
       - key: REQUIRE_ORIGIN
         value: "true"
+      - key: EXPERT_GATEWAY_REQUIRE_ACCESS
+        value: "false"
       - key: EXPERT_GATEWAY_MODE
         value: cloud_demo
       - key: EXPERT_RATE_LIMIT_PER_MINUTE
