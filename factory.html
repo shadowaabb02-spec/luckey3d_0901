@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工艺流程与设备孪生</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <style>
+        body {
+            background: #0d1117;
+            margin: 0; padding: 0; overflow: hidden; height: 100vh;
+        }
+        .bg-grid, .factory-bg { display: none !important; }
+
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+        }
+        #labels-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .walk-hint {
+            position: absolute;
+            left: 50%; bottom: 20px;
+            transform: translateX(-50%);
+            z-index: 9;
+            padding: 6px 16px;
+            border-radius: 999px;
+            background: rgba(13, 17, 23, 0.8);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #888;
+            font-size: 11px;
+            pointer-events: none;
+            letter-spacing: 0.4px;
+        }
+
+        .inspection-panel {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+        .inspection-panel .action-btn {
+            padding: 8px 5px;
+            font-size: 12px;
+            flex: 1;
+        }
+
+        .device-scroll-list { flex:1 1 auto; overflow-y:auto; padding-right:5px; min-height:0; }
+        .device-scroll-list::-webkit-scrollbar { width:4px; }
+        .device-scroll-list::-webkit-scrollbar-thumb { background:rgba(0,243,255,0.3); border-radius:2px; }
+        .device-item { background:rgba(255,255,255,0.04); margin-bottom:2px; border-radius:4px; border:1px solid rgba(0,243,255,0.08); cursor:pointer; transition:all 0.2s; }
+        .device-item:hover { background:rgba(0,243,255,0.1); border-color:rgba(0,243,255,0.3); }
+        .device-item.active { background:rgba(0,243,255,0.15); border-color:#00f3ff; box-shadow:0 0 8px rgba(0,243,255,0.2) inset; }
+        .device-summary { padding:5px 8px; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#b0c4de; }
+
+        /* ── 控制台 KPI 卡片 ── */
+        .kpi-row { display: flex; gap: 5px; margin-top: 6px; }
+        .kpi-card {
+            flex: 1; text-align: center;
+            background: rgba(0, 243, 255, 0.05);
+            border: 1px solid rgba(0, 243, 255, 0.15);
+            border-radius: 5px; padding: 4px 2px;
+        }
+        .kpi-val { font-size: 14px; font-weight: bold; color: #00f3ff; }
+        .kpi-unit { font-size: 9px; color: #8898aa; }
+        .kpi-label { font-size: 9px; color: #8898aa; margin-top: 1px; }
+
+        .ctrl-divider { border: none; border-top: 1px dashed rgba(0,243,255,0.15); margin: 6px 0; }
+
+        .quick-btn {
+            width: 100%; padding: 5px 0; margin-bottom: 4px;
+            font-size: 11px; font-weight: bold;
+            background: rgba(0, 243, 255, 0.06);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            color: #00f3ff; border-radius: 6px; cursor: pointer;
+            transition: all 0.25s;
+        }
+        .quick-btn:hover { background: rgba(0, 243, 255, 0.18); box-shadow: 0 0 10px rgba(0,243,255,0.2); }
+        .quick-btn.warn { border-color: rgba(255, 107, 107, 0.4); color: #ff6b6b; }
+        .quick-btn.warn:hover { background: rgba(255, 107, 107, 0.15); }
+
+        .runtime-row { display: flex; justify-content: space-between; font-size: 10px; color: #8898aa; padding: 2px 0; }
+        .runtime-row span:last-child { color: #00fa9a; }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="labels-layer"></div>
+    <div id="sys-alert">消息提示</div>
+    <div class="walk-hint">WASD 行走 | 鼠标拖拽旋转 | 滚轮缩放</div>
+
+    <div id="ui-layer">
+        <header class="top-header">
+            <div class="header-title">中水双膜 — 工艺流程与设备孪生</div>
+            <div class="header-right">
+                <button onclick="window.location.href='main.html?v=20260828-3d19'" class="nav-btn" style="border-color: #00f3ff; color: #00f3ff;">⬅ 返回厂区总览</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="side-panel left-panel" id="side-left">
+                <div class="data-module" id="panel-l1">
+                    <div class="toggle-btn left-btn" onclick="togglePanel('panel-l1', 'left')"></div>
+                    <div class="module-title">设备列表</div>
+                    <div class="device-scroll-list" id="device-list"></div>
+                    <div id="device-info-panel" style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.1);color:#b0c4de;font-size:12px;line-height:1.6;flex-shrink:0;display:none;"></div>
+                </div>
+            </div>
+
+            <div class="side-panel right-panel" id="side-right">
+                <div class="data-module" id="panel-r1">
+                    <div class="toggle-btn right-btn" onclick="togglePanel('panel-r1', 'right')"></div>
+                    <div class="module-title">场景视角切换</div>
+                    <div class="inspection-panel">
+                        <button class="action-btn" onclick="viewGod()">全景俯瞰</button>
+                        <button class="action-btn" onclick="viewUF()">巡检:超滤组</button>
+                        <button class="action-btn" onclick="viewRO()">巡检:反渗透</button>
+                    </div>
+
+                    <hr class="ctrl-divider">
+
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span style="width:8px;height:8px;background:#00fa9a;border-radius:50%;box-shadow:0 0 6px #00fa9a;flex-shrink:0;"></span>
+                        <span style="font-size:10px;color:#8898aa;">系统运行正常 · 无告警</span>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center; margin-top:3px;">
+                        <span style="width:8px;height:8px;background:#ffeb3b;border-radius:50%;box-shadow:0 0 6px #ffeb3b;flex-shrink:0;"></span>
+                        <span style="font-size:10px;color:#8898aa;">UF清洗周期: 已运行 18天</span>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center; margin-top:3px;">
+                        <span style="width:8px;height:8px;background:#00f3ff;border-radius:50%;box-shadow:0 0 6px #00f3ff;flex-shrink:0;"></span>
+                        <span style="font-size:10px;color:#8898aa;">RO膜健康度: 良好 92%</span>
+                    </div>
+                </div>
+
+                <div class="data-module" id="panel-r2">
+                    <div class="toggle-btn right-btn" onclick="togglePanel('panel-r2', 'right')"></div>
+                    <div class="module-title">孪生控制台</div>
+                    <div class="control-row-group">
+                        <div class="mode-btns">
+                            <button class="mini-ctrl-btn" onclick="confirmControl('智控模式')">智控</button>
+                            <button class="mini-ctrl-btn" onclick="confirmControl('PLC自控')">PLC</button>
+                            <button class="mini-ctrl-btn" onclick="confirmControl('手动控制')">手动</button>
+                        </div>
+                        <button class="action-btn estop-btn" onclick="confirmControl('系统紧急停机')">🛑 紧急停机</button>
+                    </div>
+
+                    <!-- KPI 实时指标 -->
+                    <div class="kpi-row">
+                        <div class="kpi-card">
+                            <div class="kpi-val" id="kpi-flow">12.5</div>
+                            <div class="kpi-unit">m³/h</div>
+                            <div class="kpi-label">产水流量</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-val" id="kpi-recov">68.5</div>
+                            <div class="kpi-unit">%</div>
+                            <div class="kpi-label">系统回收率</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-val" id="kpi-cond">13.2</div>
+                            <div class="kpi-unit">μS/cm</div>
+                            <div class="kpi-label">产水电导率</div>
+                        </div>
+                    </div>
+
+                    <hr class="ctrl-divider">
+
+                    <!-- 快速操作 -->
+                    <button class="quick-btn" onclick="confirmControl('启动反洗')">🔄 启动 UF 物理反洗</button>
+                    <button class="quick-btn warn" onclick="confirmControl('CIP清洗')">🧪 触发 CIP 化学清洗</button>
+                    <button class="quick-btn" onclick="confirmControl('复位报警')" style="border-color:rgba(255,235,59,0.4);color:#ffeb3b;">⚡ 复位系统报警</button>
+
+                    <hr class="ctrl-divider">
+
+                    <!-- 运行时长 -->
+                    <div class="runtime-row"><span>UF 累计运行</span><span id="rt-uf">4,820 h</span></div>
+                    <div class="runtime-row"><span>RO 累计运行</span><span id="rt-ro">4,550 h</span></div>
+                    <div class="runtime-row"><span>距下次 CIP</span><span id="rt-cip">185 h</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 400px; text-align: center;">
+            <h3 style="color: #ff4d4f;">⚠️ 操作确认</h3>
+            <p id="confirm-text" style="margin: 20px 0;">确定要切换到该模式吗？</p>
+            <div style="display: flex; gap: 15px; justify-content: center;">
+                <button class="nav-btn" onclick="closeModal('confirm-modal')">取消</button>
+                <button class="nav-btn active" id="final-confirm-btn">确定执行</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>🛠️ 控制模式功能说明</h2>
+                <button class="close-btn" onclick="closeModal('help-modal')">×</button>
+            </div>
+            <div class="modal-body" style="font-size: 14px; line-height: 1.8; color: #b0c4de;">
+                <p><strong style="color: #00fa9a;">1. 智控模式：</strong> 由 AI 算法根据水质实时数据，自动调节加药泵频率与阀门开度。</p>
+                <p><strong style="color: #00f3ff;">2. PLC自控：</strong> 运行现场 PLC 预设的梯形图逻辑，实现定时反洗与恒压供水。</p>
+                <p><strong style="color: #ffeb3b;">3. 手动控制：</strong> 屏蔽所有自动指令，仅接受操作员在界面上点击开关或输入数值。</p>
+                <p><strong style="color: #ff4d4f;">4. 紧急停机：</strong> 最高优先级。立即切断所有动力电源，锁死进水蝶阀，防止事故扩大。</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/factory_3d.js"></script>
+    <script>
+        function togglePanel(panelId, side) {
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            if (side === 'left') panel.classList.toggle('hidden-left');
+            else panel.classList.toggle('hidden-right');
+        }
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+        function confirmControl(modeName) {
+            document.getElementById('confirm-text').innerText = '这是网页演示操作：【' + modeName + '】不会向现场 PLC 下发指令。';
+            document.getElementById('confirm-modal').classList.add('show');
+            document.getElementById('final-confirm-btn').onclick = function () {
+                closeModal('confirm-modal');
+                if (typeof showSysAlert === 'function') {
+                    showSysAlert('演示完成：' + modeName + '（未连接现场 PLC）');
+                } else {
+                    alert('演示完成：' + modeName + '（未连接现场 PLC）');
+                }
+            };
+        }
+    </script>
+</body>
+</html>

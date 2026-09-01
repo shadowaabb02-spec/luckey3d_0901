@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>双膜孪生数据中心</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+    <style>
+        /* 💥 报表页专属核心样式（内嵌在此，防止跨文件粘贴丢失导致白屏） 💥 */
+        .report-tabs-container { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid rgba(0, 243, 255, 0.2); padding-bottom: 10px; }
+        .report-tab { background: transparent; border: 1px solid rgba(0, 243, 255, 0.3); color: #8898aa; padding: 8px 20px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: 0.3s; }
+        .report-tab.active, .report-tab:hover { background: rgba(0, 243, 255, 0.2); color: #00f3ff; border-color: #00f3ff; box-shadow: 0 0 10px rgba(0, 243, 255, 0.2) inset; }
+        
+        /* 4x2 八宫格布局设置 */
+        .report-charts-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 15px; }
+        .chart-container, .scroll-table { height: 180px; width: 100%; }
+        .scroll-table { overflow-y: auto; }
+        .scroll-table::-webkit-scrollbar { width: 4px; }
+        .scroll-table::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.3); border-radius: 2px; }
+
+        .toggle-view-btn { background: rgba(255, 235, 59, 0.05); border: 1px solid rgba(255, 235, 59, 0.5); color: #ffeb3b; padding: 3px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; transition: 0.3s; }
+        .toggle-view-btn:hover { background: rgba(255, 235, 59, 0.2); }
+
+        /* 紧凑型数据表 */
+        .tech-table.compact th, .tech-table.compact td { padding: 4px 6px !important; font-size: 11px !important; }
+
+        /* 配置按钮和弹窗网格 */
+        .global-config-btn { background: rgba(0, 243, 255, 0.1); border: 1px solid #00f3ff; color: #00f3ff; padding: 6px 15px; font-size: 13px; border-radius: 4px; cursor: pointer; transition: 0.3s; font-weight: bold; }
+        .global-config-btn:hover { background: rgba(0, 243, 255, 0.3); box-shadow: 0 0 10px rgba(0, 243, 255, 0.5); }
+        .checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 250px; overflow-y: auto; padding: 10px; background: rgba(0, 243, 255, 0.05); border-radius: 4px; margin-bottom: 15px; text-align: left; }
+        .checkbox-grid::-webkit-scrollbar { width: 4px; }
+        .checkbox-grid::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.3); border-radius: 2px; }
+
+        /* 新增查看报表页卡片系统 */
+        .report-type-cards { display: flex; gap: 15px; width: 100%; margin-bottom: 15px;}
+        .type-card { flex: 1; background: rgba(0, 243, 255, 0.05); border: 1px solid rgba(0, 243, 255, 0.2); border-radius: 6px; padding: 15px 20px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.3s; }
+        .type-card:hover { background: rgba(0, 243, 255, 0.1); transform: translateY(-2px); }
+        .type-card.active { background: rgba(0, 243, 255, 0.15); border-color: #00f3ff; box-shadow: 0 0 15px rgba(0, 243, 255, 0.3) inset; }
+        .type-card .card-icon { font-size: 24px; }
+        .type-card .card-text { font-size: 16px; font-weight: bold; color: #b0c4de; transition: 0.3s; }
+        .type-card.active .card-text { color: #fff; text-shadow: 0 0 5px #00f3ff; }
+
+        .report-control-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 15px; }
+        .filter-group { display: flex; align-items: center; gap: 10px; color: #8898aa; font-size: 14px; }
+        .filter-group input[type="date"] { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(0, 243, 255, 0.3); color: #fff; border-radius: 4px; color-scheme: dark; }
+        
+        /* 兜底布局样式：确保面板可见 */
+        .report-box { background: rgba(10, 25, 50, 0.6); border: 1px solid rgba(0, 243, 255, 0.3); border-radius: 8px; padding: 10px; box-shadow: 0 0 15px rgba(0, 243, 255, 0.1) inset; backdrop-filter: blur(8px); display: flex; flex-direction: column; }
+        .box-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div id="sys-alert"></div>
+
+    <header class="top-header">
+        <div class="header-title">双膜孪生数据中心</div>
+        <div class="header-right">
+            <button onclick="window.location.href='main.html?v=20260828-3d19'" class="nav-btn" style="border-color: #00f3ff; color: #00f3ff;">⬅ 返回厂区总览</button>
+        </div>
+    </header>
+
+    <div class="report-content" style="padding-top: 5px;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0, 243, 255, 0.2); margin-bottom: 15px; padding-bottom: 10px;">
+            <div class="report-tabs-container" style="margin: 0; padding: 0; border: none;">
+                <button class="report-tab active" onclick="switchReportTab('analysis', this)">📊 数据分析</button>
+                <button class="report-tab" onclick="switchReportTab('report', this)">📄 查看报表</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
+                <span style="color:#8898aa; font-size:12px; white-space:nowrap;">起始日期</span>
+                <input type="date" id="time-start-date" class="login-input" style="width:130px; margin:0; padding:4px 8px; font-size:12px;" value="2026-05-08" onchange="onTimeFilterChange()">
+                <span style="color:#8898aa; font-size:12px; white-space:nowrap;">小时</span>
+                <select id="time-start-hour" class="login-input" style="width:60px; margin:0; padding:4px; font-size:12px;" onchange="onTimeFilterChange()"></select>
+                <span style="color:#8898aa; font-size:11px; white-space:nowrap;">(连续7日)</span>
+            </div>
+            <button class="global-config-btn" id="btn-global-config" onclick="openGlobalConfig()">⚙️ 自定义全局看板 (8宫格)</button>
+        </div>
+
+        <div id="tab-analysis" class="report-tab-pane active" style="display: flex; flex-direction: column; height: calc(100vh - 130px); overflow-y: auto;">
+            <div class="report-charts-grid">
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title" style="margin:0; font-size: 12px;">综合运行指标(固定)</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box1')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box1', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box1-chart" class="view-content active chart-container"></div>
+                    <div id="box1-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box1-thead"></thead><tbody id="box1-tbody"></tbody></table></div>
+                    <div id="box1-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box2" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box2')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box2', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box2-chart" class="view-content active chart-container"></div>
+                    <div id="box2-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box2-thead"></thead><tbody id="box2-tbody"></tbody></table></div>
+                    <div id="box2-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box3" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box3')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box3', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box3-chart" class="view-content active chart-container"></div>
+                    <div id="box3-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box3-thead"></thead><tbody id="box3-tbody"></tbody></table></div>
+                    <div id="box3-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box4" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box4')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box4', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box4-chart" class="view-content active chart-container"></div>
+                    <div id="box4-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box4-thead"></thead><tbody id="box4-tbody"></tbody></table></div>
+                    <div id="box4-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box5" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box5')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box5', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box5-chart" class="view-content active chart-container"></div>
+                    <div id="box5-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box5-thead"></thead><tbody id="box5-tbody"></tbody></table></div>
+                    <div id="box5-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box6" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box6')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box6', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box6-chart" class="view-content active chart-container"></div>
+                    <div id="box6-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box6-thead"></thead><tbody id="box6-tbody"></tbody></table></div>
+                    <div id="box6-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box7" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box7')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box7', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box7-chart" class="view-content active chart-container"></div>
+                    <div id="box7-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box7-thead"></thead><tbody id="box7-tbody"></tbody></table></div>
+                    <div id="box7-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+                <div class="report-box">
+                    <div class="box-header">
+                        <div class="module-title dynamic-title" id="title-box8" style="margin:0; font-size: 12px;">加载中...</div>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <button class="nav-btn" style="padding:1px 6px; font-size:10px; border-color:#00fa9a; color:#00fa9a;" data-perm="exportExcel" onclick="exportBoxData('box8')">⬇ 导出</button>
+                            <button class="toggle-view-btn" onclick="toggleViewCycle('box8', this)">📊</button>
+                        </div>
+                    </div>
+                    <div id="box8-chart" class="view-content active chart-container"></div>
+                    <div id="box8-table" class="view-content scroll-table" style="display: none;"><table class="tech-table compact"><thead id="box8-thead"></thead><tbody id="box8-tbody"></tbody></table></div>
+                    <div id="box8-ai" class="view-content chart-container" style="display: none;"></div>
+                </div>
+            </div>
+
+            <div class="report-box log-box" style="margin-top: 10px; height: 160px; min-height: 160px; display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 5px;">
+                    <div class="module-title" style="margin: 0; font-size: 14px;">设备运行日志与台账数据</div>
+                    <button class="nav-btn" style="border-color: #00fa9a; color: #00fa9a; padding: 4px 12px; font-size: 12px; margin: 0;" onclick="exportExcel()">⬇ 导出 Excel</button>
+                </div>
+                <div style="flex: 1; overflow-y: auto; padding-right: 5px;" class="scroll-table">
+                    <table class="tech-table compact">
+                        <thead>
+                            <tr>
+                                <th style="position: sticky; top: 0; background: #07152b; z-index: 2;">采集时间</th>
+                                <th style="position: sticky; top: 0; background: #07152b; z-index: 2;">监测节点</th>
+                                <th style="position: sticky; top: 0; background: #07152b; z-index: 2;">进水压力 (MPa)</th>
+                                <th style="position: sticky; top: 0; background: #07152b; z-index: 2;">产水电导率 (μS/cm)</th>
+                                <th style="position: sticky; top: 0; background: #07152b; z-index: 2;">健康状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-report" class="report-tab-pane" style="display:none; flex-direction: column; height: calc(100vh - 130px);">
+            <div class="report-type-cards">
+                <div class="type-card active" onclick="switchReportType('daily', this)"><div class="card-icon">📅</div><div class="card-text">运营日报</div></div>
+                <div class="type-card" onclick="switchReportType('weekly', this)"><div class="card-icon">🗓️</div><div class="card-text">运营周报</div></div>
+                <div class="type-card" onclick="switchReportType('monthly', this)"><div class="card-icon">📆</div><div class="card-text">运营月报</div></div>
+                <div class="type-card" onclick="switchReportType('quarterly', this)"><div class="card-icon">📊</div><div class="card-text">运营季报</div></div>
+                <div class="type-card" onclick="switchReportType('annual', this)"><div class="card-icon">📈</div><div class="card-text">运营年报</div></div>
+            </div>
+
+            <div class="report-box" style="flex: 1; display: flex; flex-direction: column; margin-top: 15px; overflow-y: auto;">
+                <div class="report-control-bar" style="display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                    <div class="filter-group">
+                        <label>选择查询日期：</label>
+                        <input type="date" class="login-input" style="width: 160px; margin: 0; padding: 4px 10px;" id="report-date" value="2026-05-14">
+                        <button class="nav-btn active" onclick="generateReport()">一键生成</button>
+                    </div>
+                    <button class="nav-btn" style="border-color: #00fa9a; color: #00fa9a; padding: 6px 15px; font-size: 13px; margin: 0;" data-perm="exportExcel" onclick="exportExcel()">⬇ 导出 Excel</button>
+                </div>
+
+                <!-- 模块1: 汇总行+明细表 -->
+                <div class="scroll-table" style="flex-shrink: 0; max-height: 260px; margin-top: 12px; padding-right: 5px;">
+                    <table class="tech-table compact" style="width: 100%;">
+                        <thead><tr id="report-thead"></tr></thead>
+                        <tbody id="report-tbody"></tbody>
+                    </table>
+                </div>
+
+                <!-- 模块2: 统计图表 -->
+                <div style="display: flex; gap: 12px; margin-top: 12px; flex-shrink: 0; min-height: 220px;">
+                    <div id="report-chart-1" style="flex: 3; min-width: 0; height: 220px; background: rgba(0,243,255,0.03); border-radius: 6px;"></div>
+                    <div id="report-chart-2" style="flex: 1; min-width: 0; height: 220px; background: rgba(0,243,255,0.03); border-radius: 6px; display: none;"></div>
+                </div>
+
+                <!-- 模块3: AI智能文字总结 -->
+                <div id="report-summary" style="margin-top: 12px; padding: 12px 15px; background: rgba(0,243,255,0.04); border-left: 3px solid #00f3ff; border-radius: 4px; flex-shrink: 0;">
+                    <div style="color:#00f3ff; font-weight:bold; font-size:13px; margin-bottom:6px;">📝 AI 智能运营总结</div>
+                    <div id="report-summary-text" style="color:#b0c4de; font-size:12px; line-height:1.7;">点击上方「一键生成」按钮生成完整报表。</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="chart-config-modal" class="modal-overlay">
+            <div class="modal-box" style="max-width: 550px;">
+                <h3 style="color:#00f3ff; margin-top:0;">⚙️ 配置八宫格看板 (固定1项 + 自选7项)</h3>
+                <p style="color:#8898aa; font-size:13px; margin-bottom: 10px;">请在以下 22 项核心设备监测指标中，精确勾选 7 项：</p>
+                <div id="metric-checkbox-list" class="checkbox-grid"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="nav-btn" onclick="closeModal('chart-config-modal')">取消</button>
+                    <button class="nav-btn active" onclick="saveGlobalConfig()">确认保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        if (typeof echarts === 'undefined') console.error("图表库加载失败！");
+
+        // ═══ 时间筛选 ═══
+        let filterDate = '2026-05-08';
+        let filterHour = 0;
+        let dateLabels = [];
+        let hourlyData = {};
+
+        function initTimePicker() {
+            const hourSel = document.getElementById('time-start-hour');
+            for (let h = 0; h < 24; h++) hourSel.innerHTML += `<option value="${h}" ${h===0?'selected':''}>${String(h).padStart(2,'0')}:00</option>`;
+        }
+        initTimePicker();
+
+        function generateTimeLabels() {
+            const d = new Date(filterDate);
+            d.setHours(filterHour, 0, 0, 0);
+            dateLabels = [];
+            hourlyData = {};
+            for (let day = 0; day < 7; day++) {
+                const dd = new Date(d.getTime() + day * 86400000);
+                const label = `${String(dd.getMonth()+1).padStart(2,'0')}-${String(dd.getDate()).padStart(2,'0')}`;
+                dateLabels.push(label);
+                hourlyData[label] = [];
+            }
+        }
+
+        window.onTimeFilterChange = function() {
+            filterDate = document.getElementById('time-start-date').value;
+            filterHour = parseInt(document.getElementById('time-start-hour').value);
+            generateTimeLabels();
+            refreshAllBoxes();
+        };
+
+        function randData(base, wave) { return +(base + (Math.random() * wave - wave/2)).toFixed(2); }
+        function genMetricData(base, wave) {
+            const res = [];
+            for (let day = 0; day < 7; day++) {
+                const dayData = [];
+                for (let h = 0; h < 24; h++) dayData.push(randData(base, wave));
+                res.push(dayData);
+            }
+            return res;
+        }
+
+        // ═══ Box 类型映射 (boxId → metric key + AI chart type) ═══
+        const boxTypeMap = {
+            box1: { key: 'composite', aiType: 'gauge_ring' },
+            box2: { key: 'uf_tmp',     aiType: 'boxplot' },
+            box3: { key: 'ro_cond',    aiType: 'bar_compare' },
+            box4: { key: 'raw_level',  aiType: 'area_fill' },
+            box5: { key: 'ro_ph',      aiType: 'scatter' },
+            box6: { key: 'turbidity1', aiType: 'dual_axis' },
+            box7: { key: 'cl2',        aiType: 'histogram' },
+            box8: { key: 'pump_freq',  aiType: 'funnel' }
+        };
+
+        const dates = ['05-08', '05-09', '05-10', '05-11', '05-12', '05-13', '05-14'];
+        const fullHourLabels = [];
+        for (let d = 0; d < 7; d++) {
+            const label = dates[d];
+            for (let h = 0; h < 24; h++) {
+                fullHourLabels.push(`${label} ${String(h).padStart(2,'0')}:00`);
+            }
+        }
+
+        const genData7 = (base, wave) => Array.from({length: 7}, () => (base + (Math.random() * wave - wave/2)).toFixed(2));
+
+        const metricsDict = {
+            'uf_tmp':     { name: '超滤膜 跨膜压差 (MPa)', data: [0.05,0.06,0.07,0.08,0.09,0.08,0.08], color: '#ff4d4f', base: 0.07, wave: 0.04 },
+            'ro_cond':    { name: '反渗透 产水电导率 (μS/cm)', data: [12.5,12.8,13.0,13.2,13.5,13.4,13.8], color: '#00f3ff', base: 13.2, wave: 2 },
+            'raw_level':  { name: '01 原水箱 液位 (m)', data: genData7(2.5,0.5), color: '#00fa9a', base: 2.5, wave: 0.5 },
+            'ro_ph':      { name: '反渗透 进水pH计 (A)', data: genData7(7.2,0.2), color: '#ffeb3b', base: 7.2, wave: 0.4 },
+            'turbidity1': { name: '超滤 进水在线浊度 (NTU)', data: genData7(14.0,2.0), color: '#ff9800', base: 14, wave: 3 },
+            'cl2':        { name: '反渗透 余氯浓度 (mg/L)', data: genData7(0.04,0.02), color: '#e91e63', base: 0.04, wave: 0.03 },
+            'pump_freq':  { name: '反渗透 高压泵频率 (Hz)', data: genData7(43.0,1.5), color: '#9c27b0', base: 43, wave: 3 },
+            'turbidity2': { name: '超滤 产水在线浊度 (NTU)', data: genData7(0.08,0.04), color: '#ff9800', base: 0.08, wave: 0.04 },
+            'uf_flow':    { name: '超滤 产水通量 (m³/h)', data: genData7(45.0,2.0), color: '#3f51b5', base: 45, wave: 3 },
+            'air_press':  { name: '超滤 进压缩空气压力 (MPa)', data: genData7(0.58,0.05), color: '#00bcd4', base: 0.58, wave: 0.05 },
+            'ro_flow':    { name: '反渗透 产水流量 (m³/h)', data: genData7(12.5,0.5), color: '#03a9f4', base: 12.5, wave: 1 },
+            'uf_level':   { name: '超滤水箱 液位 (m)', data: genData7(3.2,0.4), color: '#8bc34a', base: 3.2, wave: 0.4 },
+            'soft_level': { name: '软水箱 液位 (m)', data: genData7(2.8,0.3), color: '#cddc39', base: 2.8, wave: 0.3 },
+            'chem_level': { name: '化学清洗水箱 液位 (m)', data: genData7(0.5,0.1), color: '#ffc107', base: 0.5, wave: 0.1 },
+            'bac_flow':   { name: '杀菌剂 投加流量 (L/h)', data: genData7(1.5,0.2), color: '#f44336', base: 1.5, wave: 0.2 },
+            'red_flow':   { name: '还原剂 投加流量 (L/h)', data: genData7(2.0,0.3), color: '#673ab7', base: 2, wave: 0.3 },
+            'sca_flow':   { name: '阻垢剂 投加流量 (L/h)', data: genData7(3.5,0.4), color: '#3f51b5', base: 3.5, wave: 0.4 },
+            'sdi_val':    { name: '便携式 SDI 测试值', data: genData7(2.8,0.5), color: '#009688', base: 2.8, wave: 0.5 },
+            'ro_press_in':{ name: '反渗透 进水压力 (MPa)', data: genData7(1.2,0.1), color: '#4caf50', base: 1.2, wave: 0.1 },
+            'ro_press_out':{ name: '反渗透 浓水压力 (MPa)', data: genData7(1.0,0.1), color: '#8bc34a', base: 1, wave: 0.1 },
+            'multi_diff': { name: '多介质过滤器压差 (MPa)', data: genData7(0.08,0.02), color: '#ff9800', base: 0.08, wave: 0.02 },
+            'sec_filter': { name: '保安过滤器压差 (MPa)', data: genData7(0.05,0.01), color: '#ff5722', base: 0.05, wave: 0.01 }
+        };
+
+        const defaultSelection = ['uf_tmp', 'ro_cond', 'raw_level', 'ro_ph', 'turbidity1', 'cl2', 'pump_freq'];
+        let selectedMetrics = [];
+        try {
+            const saved = localStorage.getItem('lefilm_dashboard_config');
+            selectedMetrics = saved ? JSON.parse(saved) : [...defaultSelection];
+            if (selectedMetrics.length !== 7) selectedMetrics = [...defaultSelection];
+        } catch (e) { selectedMetrics = [...defaultSelection]; }
+
+        let chartInstances = {};
+        let aiChartInstances = {};
+        let boxViewState = {}; // 0=chart, 1=table, 2=ai
+        let boxViewBtns = {};
+
+        // ═══ 1. 综合运行指标 (固定 Box1) ═══
+        function initBox1() {
+            const flowData = [750,780,760,810,790,820,800], energyData = [0.42,0.40,0.45,0.38,0.41,0.39,0.40], chemicalData = [12.5,12.0,13.5,11.5,12.2,11.8,12.0];
+            chartInstances['box1'] = echarts.init(document.getElementById('box1-chart'));
+            chartInstances['box1'].setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['水量','能耗','药耗'], textStyle: { color: '#fff', fontSize: 9 }, top: 0 },
+                grid: { left: '12%', right: '12%', bottom: '12%', top: '22%' },
+                xAxis: { type: 'category', data: dates, axisLabel: { color: '#8898aa', fontSize: 9 } },
+                yAxis: [
+                    { type: 'value', axisLabel: { color: '#8898aa', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } } },
+                    { type: 'value', position: 'right', axisLabel: { color: '#8898aa', fontSize: 9 }, splitLine: { show: false } }
+                ],
+                series: [
+                    { name: '水量', type: 'bar', barWidth: '30%', data: flowData, yAxisIndex: 0, itemStyle: { color: '#005f99' } },
+                    { name: '能耗', type: 'line', data: energyData, yAxisIndex: 1, itemStyle: { color: '#ffeb3b' }, smooth: true },
+                    { name: '药耗', type: 'line', data: chemicalData, yAxisIndex: 1, itemStyle: { color: '#00fa9a' }, smooth: true }
+                ]
+            });
+            let tbody = '';
+            for (let i = 0; i < 7; i++) tbody += `<tr><td>${dates[i]}</td><td style="color:#00f3ff">${flowData[i]}</td><td style="color:#ffeb3b">${energyData[i]}</td><td style="color:#00fa9a">${chemicalData[i]}</td></tr>`;
+            document.getElementById('box1-thead').innerHTML = '<tr><th>日期</th><th>水量</th><th>能耗</th><th>药耗</th></tr>';
+            document.getElementById('box1-tbody').innerHTML = tbody;
+            initAIChart('box1');
+        }
+
+        // ═══ 2. 动态指标折线图 ═══
+        function initDynamicBox(boxId, metricKey) {
+            const metric = metricsDict[metricKey];
+            if (!metric) return;
+            document.getElementById('title-' + boxId).innerText = metric.name;
+            let chart = chartInstances[boxId];
+            if (!chart) { chart = echarts.init(document.getElementById(boxId + '-chart')); chartInstances[boxId] = chart; }
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { left: '12%', right: '5%', bottom: '12%', top: '12%' },
+                xAxis: { type: 'category', data: dates, axisLabel: { color: '#8898aa', fontSize: 9 } },
+                yAxis: { type: 'value', axisLabel: { color: '#8898aa', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } } },
+                series: [{ name: metric.name, type: 'line', smooth: true, data: metric.data, itemStyle: { color: metric.color }, areaStyle: { color: metric.color, opacity: 0.1 } }]
+            }, true);
+            let tbody = '';
+            for (let i = 0; i < 7; i++) tbody += `<tr><td>${dates[i]}</td><td style="color:${metric.color}">${metric.data[i]}</td></tr>`;
+            document.getElementById(boxId + '-thead').innerHTML = '<tr><th>日期</th><th>数值</th></tr>';
+            document.getElementById(boxId + '-tbody').innerHTML = tbody;
+            initAIChart(boxId);
+        }
+
+        // ═══ 3. AI 专属图表类型渲染 ═══
+        function initAIChart(boxId) {
+            const info = boxTypeMap[boxId];
+            if (!info) return;
+            const dom = document.getElementById(boxId + '-ai');
+            if (!dom) return;
+            if (aiChartInstances[boxId]) aiChartInstances[boxId].dispose();
+            const chart = echarts.init(dom);
+            aiChartInstances[boxId] = chart;
+
+            switch (info.aiType) {
+                case 'gauge_ring': {
+                    chart.setOption({
+                        tooltip: { trigger: 'item' },
+                        legend: { bottom: 2, textStyle: { color: '#fff', fontSize: 7 }, itemWidth: 8, itemHeight: 8 },
+                        series: [{
+                            type: 'pie', radius: ['35%', '58%'], center: ['50%', '45%'],
+                            label: { formatter: '{b}\n{d}%', fontSize: 7, color: '#fff', lineHeight: 10 },
+                            data: [
+                                { value: 750, name: '产水量', itemStyle: { color: '#005f99' } },
+                                { value: 42, name: '能耗', itemStyle: { color: '#ffeb3b' } },
+                                { value: 125, name: '药耗', itemStyle: { color: '#00fa9a' } }
+                            ]
+                        }]
+                    });
+                    break;
+                }
+                case 'boxplot': {
+                    chart.setOption({
+                        tooltip: { trigger: 'item' },
+                        grid: { left: '14%', right: '5%', bottom: '14%', top: '8%' },
+                        xAxis: { type: 'category', data: dates, axisLabel: { color: '#8898aa', fontSize: 7 } },
+                        yAxis: { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, name: 'MPa', nameTextStyle: { fontSize: 7, color: '#8898aa' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+                        series: [{ name: '压差分布', type: 'boxplot', data: [[0.04,0.06,0.07,0.08,0.10],[0.05,0.07,0.08,0.09,0.11],[0.04,0.06,0.07,0.09,0.10],[0.05,0.07,0.08,0.10,0.12],[0.04,0.06,0.08,0.09,0.11],[0.05,0.07,0.08,0.09,0.10],[0.04,0.06,0.07,0.08,0.12]], itemStyle: { color: '#ff4d4f', borderColor: '#ff4d4f' } }]
+                    });
+                    break;
+                }
+                case 'bar_compare': {
+                    const m = metricsDict[info.key];
+                    chart.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: { data: ['实测值', '标准值'], textStyle: { color: '#fff', fontSize: 7 }, itemWidth: 8, itemHeight: 8, top: 0 },
+                        grid: { left: '10%', right: '5%', bottom: '14%', top: '16%' },
+                        xAxis: { type: 'category', data: dates, axisLabel: { color: '#8898aa', fontSize: 7 } },
+                        yAxis: { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+                        series: [
+                            { name: '实测值', type: 'bar', barWidth: '30%', data: m.data.map(d => +d), itemStyle: { color: '#00f3ff' }, barGap: '10%' },
+                            { name: '标准值', type: 'bar', barWidth: '30%', data: [13,13,13,13,13,13,13], itemStyle: { color: '#888' } }
+                        ]
+                    });
+                    break;
+                }
+                case 'area_fill': {
+                    const m = metricsDict[info.key];
+                    chart.setOption({
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '12%', right: '5%', bottom: '14%', top: '8%' },
+                        xAxis: { type: 'category', data: dates, boundaryGap: false, axisLabel: { color: '#8898aa', fontSize: 7 } },
+                        yAxis: { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, min: 0, max: 4, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+                        series: [{ name: m.name, type: 'line', smooth: true, data: m.data.map(d => +d), itemStyle: { color: '#00fa9a' }, areaStyle: { color: 'rgba(0,250,154,0.35)' }, lineStyle: { width: 1 }, symbol: 'none' }]
+                    });
+                    break;
+                }
+                case 'scatter': {
+                    const m = metricsDict[info.key];
+                    const scData = m.data.map((d, i) => [i, +d]);
+                    chart.setOption({
+                        tooltip: { trigger: 'item', formatter: p => `${dates[p.data[0]]}<br/>pH: ${p.data[1]}` },
+                        grid: { left: '12%', right: '5%', bottom: '14%', top: '8%' },
+                        xAxis: { type: 'category', data: dates, axisLabel: { color: '#8898aa', fontSize: 7 } },
+                        yAxis: { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, min: 6.8, max: 7.8, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+                        series: [{ name: 'pH波动', type: 'scatter', data: scData, symbolSize: 8, itemStyle: { color: '#ffeb3b', borderColor: '#ff9800', borderWidth: 1 } }]
+                    });
+                    break;
+                }
+                case 'dual_axis': {
+                    const m = metricsDict[info.key];
+                    const barData = m.data.map(d => +d);
+                    const lineData = [0.08,0.09,0.11,0.10,0.09,0.12,0.10];
+                    chart.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: { data: ['浊度值', '达标线'], textStyle: { color: '#fff', fontSize: 7 }, itemWidth: 8, itemHeight: 8, top: 0 },
+                        grid: { left: '12%', right: '12%', bottom: '14%', top: '16%' },
+                        xAxis: { type: 'category', data: dates, axisLabel: { color: '#8898aa', fontSize: 7 } },
+                        yAxis: [
+                            { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+                            { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, splitLine: { show: false } }
+                        ],
+                        series: [
+                            { name: '浊度值', type: 'bar', barWidth: '35%', data: barData, itemStyle: { color: '#ff9800' } },
+                            { name: '达标线', type: 'line', yAxisIndex: 1, data: lineData, smooth: true, itemStyle: { color: '#00fa9a' }, lineStyle: { type: 'dashed' } }
+                        ]
+                    });
+                    break;
+                }
+                case 'histogram': {
+                    const raw = metricsDict[info.key].data.map(d => +d);
+                    const bins = [0, 0.02, 0.03, 0.04, 0.05, 0.07];
+                    const counts = bins.map((b, i) => raw.filter(v => v >= b && v < (bins[i+1]||0.1)).length);
+                    chart.setOption({
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '10%', right: '5%', bottom: '22%', top: '8%' },
+                        xAxis: { type: 'category', data: ['<0.02','0.02-\n0.03','0.03-\n0.04','0.04-\n0.05','0.05-\n0.07','≥0.07'], axisLabel: { color: '#8898aa', fontSize: 6 } },
+                        yAxis: { type: 'value', axisLabel: { color: '#8898aa', fontSize: 7 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.08)' } } },
+                        series: [{ name: '频次', type: 'bar', barWidth: '55%', data: counts, itemStyle: { color: '#e91e63' } }]
+                    });
+                    break;
+                }
+                case 'funnel': {
+                    const freqRanges = ['39-41','41-42','42-43','43-44','44-45','45-46 Hz'];
+                    const freqCounts = [2, 3, 8, 15, 6, 1];
+                    chart.setOption({
+                        tooltip: { trigger: 'item', formatter: '{b}: {c}次' },
+                        series: [{
+                            type: 'funnel', left: '8%', right: '8%', top: 18, bottom: 18,
+                            width: '70%', min: 0, max: 20, gap: 2,
+                            label: { show: true, position: 'inside', fontSize: 7, color: '#fff', formatter: '{b}\n{c}次' },
+                            data: freqRanges.map((r, i) => ({ name: r, value: freqCounts[i] })),
+                            itemStyle: { borderColor: '#020917', borderWidth: 1 }
+                        }]
+                    });
+                    break;
+                }
+            }
+        }
+
+        // ═══ 4. 三态切换 ═══
+        window.toggleViewCycle = function(boxId, btn) {
+            if (boxViewState[boxId] === undefined) boxViewState[boxId] = 0;
+            const chartEl = document.getElementById(boxId + '-chart');
+            const tableEl = document.getElementById(boxId + '-table');
+            const aiEl = document.getElementById(boxId + '-ai');
+            boxViewState[boxId] = (boxViewState[boxId] + 1) % 3;
+            chartEl.style.display = 'none'; tableEl.style.display = 'none'; aiEl.style.display = 'none';
+            if (boxViewState[boxId] === 0) { chartEl.style.display = 'block'; btn.innerText = '📊'; }
+            else if (boxViewState[boxId] === 1) { tableEl.style.display = 'block'; btn.innerText = '📋'; }
+            else { aiEl.style.display = 'block'; btn.innerText = '🤖'; }
+            if (boxViewState[boxId] === 0) { if (chartInstances[boxId]) chartInstances[boxId].resize(); }
+            if (boxViewState[boxId] === 2) { if (aiChartInstances[boxId]) aiChartInstances[boxId].resize(); }
+        };
+
+        window.refreshAllBoxes = function() {
+            if (chartInstances['box1']) { initBox1(); }
+            ['box2','box3','box4','box5','box6','box7','box8'].forEach((id, i) => { if (selectedMetrics[i]) initDynamicBox(id, selectedMetrics[i]); });
+        };
+
+        // ═══ 5. 导出 ═══
+        window.exportBoxData = function(boxId) {
+            window.exportExcel();
+        };
+
+        window.exportExcel = window.exportData = function() {
+            const alertBox = document.getElementById('sys-alert');
+            if (!alertBox) return alert('正在导出…');
+            const summary = document.getElementById('report-summary-text').innerText;
+            alertBox.innerText = '正在聚合明细表+图表+总结文案，生成完整 Excel 报表...';
+            alertBox.style.display = 'block';
+            setTimeout(() => {
+                alertBox.innerText = '✅ 导出成功！已包含原始明细表、汇总数据、统计图表及 AI 运营总结。';
+                setTimeout(() => alertBox.style.display = 'none', 3000);
+            }, 2000);
+        };
+
+        function applyExportPerms() {
+            let perms = null;
+            try { perms = JSON.parse(localStorage.getItem('lefilm_perm_data')); } catch(e) {}
+            let canExport = true;
+            if (perms && perms['ops'] && perms['ops']['导出Excel'] === false) canExport = false;
+            document.querySelectorAll('[data-perm="exportExcel"]').forEach(b => { b.style.display = canExport ? '' : 'none'; });
+        }
+
+        // ═══ 7. 配置逻辑 ═══
+        window.openGlobalConfig = function() {
+            const grid = document.getElementById('metric-checkbox-list');
+            let html = '<label style="display:block;color:#8898aa;margin-bottom:5px;grid-column:span2;"><input type="checkbox" checked disabled> [固定] 近7日 综合运行指标</label>';
+            for (let key in metricsDict) {
+                const checked = selectedMetrics.includes(key) ? 'checked' : '';
+                html += `<label style="display:flex;align-items:center;color:#b0c4de;margin-bottom:5px;font-size:12px;cursor:pointer;"><input type="checkbox" class="metric-cb" value="${key}" ${checked} onchange="checkMaxLimits(this)" style="margin-right:5px;"> ${metricsDict[key].name}</label>`;
+            }
+            grid.innerHTML = html;
+            document.getElementById('chart-config-modal').classList.add('show');
+        };
+
+        window.checkMaxLimits = function(cb) {
+            const checked = document.querySelectorAll('.metric-cb:checked');
+            if (checked.length > 7) { cb.checked = false; alert('⚠️ 最多只能挑选 7 个自定义指标！'); }
+        };
+
+        window.saveGlobalConfig = function() {
+            const checked = document.querySelectorAll('.metric-cb:checked');
+            if (checked.length !== 7) { alert('⚠️ 请精确选择 7 个自定义指标！'); return; }
+            selectedMetrics = Array.from(checked).map(cb => cb.value);
+            localStorage.setItem('lefilm_dashboard_config', JSON.stringify(selectedMetrics));
+            ['box2','box3','box4','box5','box6','box7','box8'].forEach((id, i) => initDynamicBox(id, selectedMetrics[i]));
+            document.getElementById('chart-config-modal').classList.remove('show');
+        };
+
+        window.closeModal = function(id) { document.getElementById(id).classList.remove('show'); };
+
+        window.switchReportTab = function(tabId, btn) {
+            document.querySelectorAll('.report-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.report-tab-pane').forEach(p => p.style.display = 'none');
+            if (btn) btn.classList.add('active');
+            document.getElementById('tab-' + tabId).style.display = 'flex';
+            document.getElementById('btn-global-config').style.display = (tabId === 'analysis') ? 'block' : 'none';
+            if (tabId === 'analysis') setTimeout(() => { Object.values(chartInstances).forEach(c => c.resize()); Object.values(aiChartInstances).forEach(c => c.resize()); }, 100);
+            if (tabId === 'report') generateReport();
+        };
+
+        // ═══ 8. 查看报表 (三模块: 数据表 + 图表 + AI总结) ═══
+        let currentReportType = 'daily';
+        let reportChartInstances = {};
+        let reportDataCache = null;
+
+        window.switchReportType = function(type, cardEl) {
+            document.querySelectorAll('.type-card').forEach(c => c.classList.remove('active'));
+            if (cardEl) cardEl.classList.add('active');
+            currentReportType = type;
+            generateReport();
+        };
+
+        function buildReportData() {
+            const type = currentReportType;
+            let rows, timeLabel, labels = [], timeStrs = [];
+            if (type === 'daily') { rows = 24; timeLabel = '时间段 (小时)'; for (let i = 1; i <= 24; i++) { labels.push(i); timeStrs.push(`${String(i-1).padStart(2,'0')}:00 - ${String(i).padStart(2,'0')}:00`); } }
+            else if (type === 'weekly') { rows = 7; timeLabel = '日期 (星期)'; const w = ['一','二','三','四','五','六','日']; for (let i = 1; i <= 7; i++) { labels.push('星期' + w[i-1]); timeStrs.push('星期' + w[i-1]); } }
+            else if (type === 'monthly') { rows = 30; timeLabel = '日期 (号)'; for (let i = 1; i <= 30; i++) { labels.push(i); timeStrs.push(`本月 ${i} 日`); } }
+            else if (type === 'quarterly') { rows = 3; timeLabel = '月度汇总'; labels = ['第1个月', '第2个月', '第3个月']; timeStrs = labels.slice(); }
+            else { rows = 12; timeLabel = '月份 (自然月)'; for (let i = 1; i <= 12; i++) { labels.push(i + '月'); timeStrs.push(i + '月'); } }
+
+            const scale = type === 'daily' ? 1 : (type === 'weekly' ? 24 : (type === 'monthly' ? 24 : (type === 'quarterly' ? 720 : 240)));
+            const data = [];
+            for (let i = 0; i < rows; i++) {
+                const inFlow = +(100 * scale + Math.random() * 20 * scale).toFixed(1);
+                const outFlow = +(inFlow * (0.65 + Math.random() * 0.1)).toFixed(1);
+                const recovery = +((outFlow / inFlow) * 100).toFixed(1);
+                const power = +(outFlow * 0.4 + Math.random() * 5).toFixed(1);
+                const chemical = +(outFlow * 0.012 + Math.random() * 0.2).toFixed(2);
+                const alarms = Math.random() > 0.85 ? Math.floor(Math.random() * 3) : 0;
+                data.push({ timeStr: timeStrs[i], label: labels[i], inFlow, outFlow, recovery, power, chemical, alarms });
+            }
+            return { type, rows, timeLabel, data };
+        }
+
+        function renderReportTable(report) {
+            const thead = document.getElementById('report-thead'), tbody = document.getElementById('report-tbody');
+            if (!thead || !tbody) return;
+            let totalIn = 0, totalOut = 0, totalPower = 0, totalChem = 0, totalAlarms = 0;
+            report.data.forEach(d => { totalIn += d.inFlow; totalOut += d.outFlow; totalPower += d.power; totalChem += d.chemical; totalAlarms += d.alarms; });
+            const avgRecovery = totalIn > 0 ? ((totalOut / totalIn) * 100).toFixed(1) : '0.0';
+
+            thead.innerHTML = `<th style="position:sticky;top:0;background:#07152b;z-index:2">${report.timeLabel}</th><th style="position:sticky;top:0;background:#07152b;z-index:2">进水总量(m³)</th><th style="position:sticky;top:0;background:#07152b;z-index:2">产水总量(m³)</th><th style="position:sticky;top:0;background:#07152b;z-index:2">回收率(%)</th><th style="position:sticky;top:0;background:#07152b;z-index:2">耗电量(kWh)</th><th style="position:sticky;top:0;background:#07152b;z-index:2">药剂耗量(kg)</th><th style="position:sticky;top:0;background:#07152b;z-index:2">预警次数</th>`;
+
+            let html = `<tr style="background:rgba(0,243,255,0.1);font-weight:bold;color:#00f3ff;">
+                <td>📋 周期合计</td>
+                <td>${totalIn.toFixed(1)}</td><td>${totalOut.toFixed(1)}</td><td>${avgRecovery}%</td>
+                <td style="color:#ffeb3b">${totalPower.toFixed(1)}</td><td>${totalChem.toFixed(2)}</td>
+                <td style="color:${totalAlarms>0?'#ff4d4f':'#00fa9a'}">${totalAlarms}</td></tr>`;
+            report.data.forEach(d => {
+                html += `<tr><td>${d.timeStr}</td><td>${d.inFlow.toFixed(1)}</td><td style="color:#00f3ff;font-weight:bold">${d.outFlow.toFixed(1)}</td><td>${d.recovery}%</td><td style="color:#ffeb3b">${d.power.toFixed(1)}</td><td>${d.chemical.toFixed(2)}</td><td style="color:${d.alarms>0?'#ff4d4f':'#00fa9a'}">${d.alarms}</td></tr>`;
+            });
+            tbody.innerHTML = html;
+
+            // Save totals for summary
+            report._totals = { totalIn: totalIn.toFixed(1), totalOut: totalOut.toFixed(1), avgRecovery, totalPower: totalPower.toFixed(1), totalChem: totalChem.toFixed(2), totalAlarms };
+        }
+
+        function renderReportCharts(report) {
+            Object.values(reportChartInstances).forEach(c => c.dispose());
+            reportChartInstances = {};
+            const dom1 = document.getElementById('report-chart-1'), dom2 = document.getElementById('report-chart-2');
+            if (!dom1 || !dom2) return;
+
+            // 默认: 日报/月报/季报左右分栏(3:1)，周报/年报右栏隐藏
+            if (report.type === 'weekly' || report.type === 'annual') {
+                dom1.style.flex = '1'; dom2.style.display = 'none';
+            } else {
+                dom1.style.flex = '3'; dom2.style.flex = '1'; dom2.style.display = 'block';
+            }
+
+            const labels = report.data.map(d => d.label);
+            const inData = report.data.map(d => d.inFlow);
+            const outData = report.data.map(d => d.outFlow);
+            const recData = report.data.map(d => d.recovery);
+            const powData = report.data.map(d => d.power);
+            const chemData = report.data.map(d => d.chemical);
+
+            const c1 = echarts.init(dom1); reportChartInstances['c1'] = c1;
+            const baseGrid = { left: '12%', right: '5%', bottom: '14%', top: '14%' };
+            const legendCenter = { left: 'center', textStyle: { color: '#fff', fontSize: 7 }, itemWidth: 10, itemHeight: 8, top: 1 };
+            const xStyle = { color: '#8898aa', fontSize: 7 };
+            const yStyle = { color: '#8898aa', fontSize: 7 };
+            const spl = { lineStyle: { color: 'rgba(255,255,255,0.06)' } };
+
+            switch (report.type) {
+                case 'daily': {
+                    c1.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: Object.assign({ data: ['进水','产水','回收率','耗电'] }, legendCenter),
+                        grid: { left: '10%', right: '10%', bottom: '14%', top: '14%' },
+                        xAxis: { type: 'category', data: labels, axisLabel: { color: '#8898aa', fontSize: 7, interval: 3 }, name: '(小时)', nameTextStyle: { color: '#8898aa', fontSize: 7 }, nameLocation: 'center', nameGap: 20 },
+                        yAxis: [
+                            { type: 'value', name: '水量 m³', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: spl },
+                            { type: 'value', name: '% / kWh', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: { show: false } }
+                        ],
+                        series: [
+                            { name: '进水', type: 'bar', barWidth: '45%', data: inData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#005f99' } },
+                            { name: '产水', type: 'bar', barWidth: '45%', data: outData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#00f3ff' } },
+                            { name: '回收率', type: 'line', yAxisIndex: 1, data: recData, smooth: true, itemStyle: { color: '#ffeb3b' }, symbol: 'none', lineStyle: { width: 2 } },
+                            { name: '耗电', type: 'line', yAxisIndex: 1, data: powData, smooth: true, itemStyle: { color: '#ff9800' }, symbol: 'none', lineStyle: { width: 2 } }
+                        ]
+                    });
+                    var c2 = echarts.init(dom2); reportChartInstances['c2'] = c2;
+                    c2.setOption({
+                        title: { text: '成本占比', left: 'center', top: 3, textStyle: { color: '#fff', fontSize: 9 } },
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                        legend: { bottom: 2, textStyle: { color: '#fff', fontSize: 7 }, itemWidth: 8, itemHeight: 8 },
+                        series: [{
+                            type: 'pie', radius: ['38%', '55%'], center: ['50%', '45%'],
+                            label: { fontSize: 7, color: '#fff', formatter: '{b}\n{d}%', lineHeight: 10 },
+                            labelLine: { length: 8, length2: 6 },
+                            data: [
+                                { value: +report._totals.totalPower, name: '电费', itemStyle: { color: '#ffeb3b' } },
+                                { value: +report._totals.totalChem, name: '药剂费', itemStyle: { color: '#9c27b0' } },
+                                { value: +(report._totals.totalOut * 0.02).toFixed(1), name: '人工运维', itemStyle: { color: '#00fa9a' } }
+                            ]
+                        }]
+                    });
+                    break;
+                }
+                case 'weekly': {
+                    var weekLabels = ['周一','周二','周三','周四','周五','周六','周日'];
+                    var boxData = [];
+                    for (var bi = 0; bi < report.data.length; bi++) {
+                        var r = report.data[bi].recovery;
+                        boxData.push([Math.max(60, r - 4), r - 2, r, r + 2, Math.min(80, r + 4)]);
+                    }
+                    c1.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: Object.assign({ data: ['进水','产水','回收率波动'] }, legendCenter),
+                        grid: { left: '10%', right: '10%', bottom: '12%', top: '14%' },
+                        xAxis: { type: 'category', data: weekLabels, axisLabel: xStyle },
+                        yAxis: [
+                            { type: 'value', name: '水量 m³', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: spl },
+                            { type: 'value', name: '回收率 %', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: { show: false }, min: 55, max: 85 }
+                        ],
+                        series: [
+                            { name: '进水', type: 'bar', barWidth: '28%', data: inData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#005f99' }, barGap: '12%' },
+                            { name: '产水', type: 'bar', barWidth: '28%', data: outData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#00f3ff' } },
+                            { name: '回收率波动', type: 'boxplot', yAxisIndex: 1, data: boxData, itemStyle: { color: '#ffeb3b', borderColor: '#ffeb3b', borderWidth: 1.5 }, boxWidth: [8, 12] }
+                        ]
+                    });
+                    break;
+                }
+                case 'monthly': {
+                    c1.setOption({
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '10%', right: '8%', bottom: '14%', top: '10%' },
+                        xAxis: { type: 'category', data: labels, boundaryGap: false, axisLabel: { color: '#8898aa', fontSize: 7, interval: 4 }, name: '(日)', nameTextStyle: { color: '#8898aa', fontSize: 7 }, nameLocation: 'center', nameGap: 18 },
+                        yAxis: { type: 'value', name: '产水量 m³', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: spl },
+                        series: [{ name: '日产水量', type: 'line', smooth: true, data: outData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#00f3ff' }, areaStyle: { color: 'rgba(0,243,255,0.25)' }, symbol: 'none', lineStyle: { width: 1.5 } }]
+                    });
+                    var c2 = echarts.init(dom2); reportChartInstances['c2'] = c2;
+                    c2.setOption({
+                        title: { text: '运营成本', left: 'center', top: 3, textStyle: { color: '#fff', fontSize: 9 } },
+                        tooltip: { trigger: 'item' },
+                        legend: { bottom: 2, textStyle: { color: '#fff', fontSize: 7 }, itemWidth: 8, itemHeight: 8 },
+                        series: [{
+                            type: 'pie', radius: ['38%', '55%'], center: ['50%', '45%'],
+                            label: { fontSize: 7, color: '#fff', formatter: '{b}\n{d}%', lineHeight: 10 },
+                            labelLine: { length: 8, length2: 6 },
+                            data: [
+                                { value: +report._totals.totalPower, name: '电费', itemStyle: { color: '#ffeb3b' } },
+                                { value: +report._totals.totalChem, name: '药剂费', itemStyle: { color: '#9c27b0' } },
+                                { value: +(report._totals.totalOut * 0.03).toFixed(1), name: '人工运维', itemStyle: { color: '#00fa9a' } }
+                            ]
+                        }]
+                    });
+                    break;
+                }
+                case 'quarterly': {
+                    var qLabels = ['第1个月', '第2个月', '第3个月'];
+                    c1.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: Object.assign({ data: ['进水','产水','能耗'] }, legendCenter),
+                        grid: { left: '10%', right: '8%', bottom: '14%', top: '14%' },
+                        xAxis: { type: 'category', data: qLabels, axisLabel: xStyle },
+                        yAxis: { type: 'value', name: '数量', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: spl },
+                        series: [
+                            { name: '进水', type: 'bar', barWidth: '22%', data: inData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#005f99' }, barGap: '12%' },
+                            { name: '产水', type: 'bar', barWidth: '22%', data: outData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#00f3ff' } },
+                            { name: '能耗', type: 'bar', barWidth: '22%', data: powData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#ffeb3b' } }
+                        ]
+                    });
+                    var c2 = echarts.init(dom2); reportChartInstances['c2'] = c2;
+                    c2.setOption({
+                        title: { text: '水量损耗', left: 'center', top: 3, textStyle: { color: '#fff', fontSize: 9 } },
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} m³' },
+                        series: [{
+                            type: 'funnel', left: '12%', right: '12%', top: 22, bottom: 22, width: '66%',
+                            min: 0, max: Math.max.apply(null, inData.map(function(v){return +v.toFixed(0)})), gap: 4,
+                            label: { show: true, position: 'right', fontSize: 7, color: '#fff', formatter: '{b}\n{c} m³', lineHeight: 10 },
+                            labelLine: { length: 12, lineStyle: { width: 1 } },
+                            data: [
+                                { value: +report._totals.totalIn, name: '原水进水', itemStyle: { color: '#005f99' } },
+                                { value: +(report._totals.totalIn * 0.9).toFixed(0), name: 'UF产水', itemStyle: { color: '#00f3ff' } },
+                                { value: +report._totals.totalOut, name: 'RO产水', itemStyle: { color: '#00fa9a' } }
+                            ]
+                        }]
+                    });
+                    break;
+                }
+                case 'annual': {
+                    var annualLabels = [];
+                    for (var ai = 1; ai <= 12; ai++) annualLabels.push(ai + '月');
+                    c1.setOption({
+                        tooltip: { trigger: 'axis' },
+                        legend: Object.assign({ data: ['回收率','耗电','药剂'] }, legendCenter),
+                        grid: { left: '10%', right: '10%', bottom: '12%', top: '14%' },
+                        xAxis: { type: 'category', data: annualLabels, axisLabel: { color: '#8898aa', fontSize: 7, interval: 1 } },
+                        yAxis: [
+                            { type: 'value', name: '回收率 %', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, min: 55, max: 80, splitLine: spl },
+                            { type: 'value', name: '消耗量', nameTextStyle: { color: '#8898aa', fontSize: 7 }, axisLabel: yStyle, splitLine: { show: false } }
+                        ],
+                        series: [
+                            { name: '回收率', type: 'line', smooth: true, data: recData, itemStyle: { color: '#00f3ff' }, areaStyle: { color: 'rgba(0,243,255,0.2)' }, symbol: 'circle', symbolSize: 3, lineStyle: { width: 2 } },
+                            { name: '耗电', type: 'bar', yAxisIndex: 1, stack: 'sum', barWidth: '45%', data: powData.map(function(v){return +v.toFixed(0)}), itemStyle: { color: '#ffeb3b' }, barGap: '15%' },
+                            { name: '药剂', type: 'bar', yAxisIndex: 1, stack: 'sum', barWidth: '45%', data: chemData.map(function(v){return +v.toFixed(1)}), itemStyle: { color: '#9c27b0' } }
+                        ]
+                    });
+                    dom2.style.display = 'none';
+                    break;
+                }
+            }
+        }
+        function generateSummaryText(report) {
+            const t = report._totals;
+            const typeLabel = { daily: '当日', weekly: '本周', monthly: '本月', quarterly: '本季度', annual: '本年度' };
+            const period = typeLabel[report.type] || '当期';
+            const avgRecoveryNum = parseFloat(t.avgRecovery);
+            const recoveryEval = avgRecoveryNum >= 68 ? '稳定达标，处于优良运行区间' : avgRecoveryNum >= 60 ? '基本正常，接近额定回收率下限' : '偏低，需排查膜性能衰减或预处理异常';
+            const alarmEval = t.totalAlarms === 0 ? '期间系统运行平稳，未触发任何预警事件。' : `期间共触发 ${t.totalAlarms} 次预警事件，主要集中于水质波动时段，均已按预案完成闭环处置。`;
+            const alarmTimeHint = t.totalAlarms > 0 ? '预警主要集中在高负荷运行时段，建议优化排产计划以降低瞬时冲击负荷。' : '';
+            const optAdvice = avgRecoveryNum >= 68
+                ? '建议继续保持当前工艺参数设定，定期开展预防性化学清洗，维持膜组件最佳性能状态。'
+                : '建议安排一次超滤/反渗透膜性能评估，结合在线SDI检测数据判断是否需要调整预处理药剂投加量或提高反洗频率。';
+
+            return `① ${period}产能汇总：总进水 ${t.totalIn} m³，总产水 ${t.totalOut} m³，平均回收率 ${t.avgRecovery}%，${recoveryEval}。
+② 能耗与药耗：综合耗电量 ${t.totalPower} kWh，药剂总耗量 ${t.totalChem} kg。单位产水能耗约 ${(t.totalPower / t.totalOut).toFixed(2)} kWh/m³，药剂单耗约 ${(t.totalChem / t.totalOut * 1000).toFixed(1)} g/m³。电耗与药剂指标处于预算可控范围内。
+③ 预警事件：${alarmEval}${alarmTimeHint}
+④ 优化建议：${optAdvice}`;
+        }
+
+        window.generateReport = function() {
+            reportDataCache = buildReportData();
+            renderReportTable(reportDataCache);
+            renderReportCharts(reportDataCache);
+            const summary = generateSummaryText(reportDataCache);
+            document.getElementById('report-summary-text').innerText = summary;
+        };
+
+        // ═══ 9. 设备运行日志 ═══
+        function renderLogs() {
+            const tbody = document.getElementById('table-body');
+            const nodes = ['1# 预处理多介质','UF 超滤膜组 (A段)','UF 超滤膜组 (B段)','RO 反渗透高压泵','RO 膜组件 (1段)'];
+            let html = ''; const now = new Date();
+            for (let i = 0; i < 24; i++) {
+                const logTime = new Date(now.getTime() - i*5*60000);
+                const timeText = `${String(logTime.getHours()).padStart(2,'0')}:${String(logTime.getMinutes()).padStart(2,'0')}:00`;
+                const node = nodes[Math.floor(Math.random()*nodes.length)];
+                let pressure = (0.15+Math.random()*1.2).toFixed(2), cond = (12+Math.random()*5).toFixed(1);
+                const isWarn = Math.random()>0.9;
+                if (isWarn) pressure = (1.5+Math.random()*0.3).toFixed(2);
+                html += `<tr><td>${timeText}</td><td>${node}</td><td style="color:${isWarn?'#ff4d4f':'#b0c4de'};font-weight:bold">${pressure}</td><td>${cond}</td><td><span class="status-badge ${isWarn?'status-warn':'status-normal'}">${isWarn?'预警异常':'正常运行'}</span></td></tr>`;
+            }
+            tbody.innerHTML = html;
+        }
+
+        window.onload = () => {
+            generateTimeLabels();
+            initBox1();
+            ['box2','box3','box4','box5','box6','box7','box8'].forEach((id, i) => initDynamicBox(id, selectedMetrics[i]));
+            renderLogs();
+            generateReport();
+            applyExportPerms();
+        };
+
+        window.addEventListener('resize', () => {
+            Object.values(chartInstances).forEach(c => c.resize());
+            Object.values(aiChartInstances).forEach(c => c.resize());
+            Object.values(reportChartInstances).forEach(c => c.resize());
+        });
+    </script>
+</body>
+</html>

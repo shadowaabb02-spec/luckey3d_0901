@@ -1,0 +1,6 @@
+.DS_Store
+server/.env
+*.fbx
+*.dxf
+*.dwg
+*.blend

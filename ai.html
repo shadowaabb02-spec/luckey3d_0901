@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>乐凯中水 - AI 智能预测中心</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        /* 1. 背景补丁：使用本地图片并加深遮罩 */
+        body {
+            background: linear-gradient(rgba(2, 9, 23, 0.75), rgba(2, 9, 23, 0.95)), 
+                        url('./mybg.jpg') center center / cover no-repeat fixed !important;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* 2. 页面布局 */
+        .ai-layout {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            height: calc(100% - 80px); 
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 20px;
+            position: absolute;
+            top: 80px;
+        }
+        .ai-panel {
+            background: rgba(4, 21, 55, 0.7);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.1) inset;
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .ai-left { width: 28%; overflow-y: auto; } 
+        .ai-right { width: 26%; }
+        .ai-center { width: 46%; }
+        
+        .ai-title {
+            font-size: 16px; color: #00f3ff; margin-bottom: 15px; display: flex; align-items: center; font-weight: bold;
+        }
+        .ai-title::before { content: ''; display: inline-block; width: 4px; height: 16px; background: #00f3ff; margin-right: 10px; }
+        
+        .model-list-item {
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(0, 243, 255, 0.05); padding: 10px 12px; margin-bottom: 8px;
+            border-left: 2px solid #00f3ff; border-radius: 2px; font-size: 13px;
+        }
+        .model-name { color: #fff; flex: 1; }
+        .model-status { font-weight: bold; font-size: 12px; }
+        .status-running { color: #00fa9a; }
+        .status-training { color: #ffeb3b; }
+        
+        .advice-card { background: rgba(0, 243, 255, 0.05); padding: 15px; border-radius: 4px; margin-bottom: 15px; border: 1px solid rgba(0, 243, 255, 0.3); }
+        .advice-title { color: #00f3ff; font-weight: bold; margin-bottom: 10px; font-size: 14px;}
+        .advice-text { font-size: 13px; color: #b0c4de; line-height: 1.6; }
+        .advice-highlight { color: #ff4d4f; font-weight: bold; }
+
+        /* 3. PLC 同步进度弹窗样式 */
+        #plc-modal {
+            display: none; 
+            position: fixed; 
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            width: 320px; 
+            background: rgba(4, 21, 55, 0.95); 
+            border: 1px solid #00f3ff; 
+            padding: 25px; 
+            z-index: 1000; 
+            text-align: center; 
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.5);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header class="top-header">
+        <div class="header-title">双膜孪生AI预测中心</div>
+        <div class="header-right">
+            <button onclick="window.location.href='main.html?v=20260828-3d19'" class="nav-btn" style="border-color: #00f3ff; color: #00f3ff;">⬅ 返回厂区总览</button>
+        </div>
+    </header>
+
+    <div class="ai-layout">
+       <div class="ai-panel ai-left" style="display: flex; flex-direction: column;">
+            <div class="ai-title">后端预测模型矩阵状态</div>
+            
+            <div class="model-list-scroll" style="flex: 1; overflow-y: auto; padding-right: 5px; margin-bottom: 15px;" id="model-list-container">
+                <!-- 模型列表由 ai_charts.js 动态渲染 -->
+            </div>
+            
+            <div style="font-size: 12px; color: #b0c4de;">自动同步周期: 5 分钟</div>
+            <div style="margin-top: 5px; font-size: 12px; color: #b0c4de;">API 通讯状态: <span style="color: #00fa9a; font-weight: bold; text-shadow: 0 0 5px #00fa9a;">正常</span></div>
+        </div>
+
+        <div class="ai-panel ai-center" style="display: flex; flex-direction: column;">
+            <div class="ai-title" id="dynamic-model-title" style="font-size: 18px; color: #fff; margin-bottom: 10px;">模型名称加载中...</div>
+            
+            <div class="center-content-scroll" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <div style="font-size: 13px; color: #8898aa; margin-bottom: 15px; line-height: 1.6;" id="dynamic-model-desc">
+                    模型描述加载中...
+                </div>
+
+                <div class="model-detail-grid">
+                    <div class="model-info-card">
+                        <h4>📥 核心输入特征 (Features)</h4>
+                        <div id="dynamic-model-inputs"></div>
+                    </div>
+                    <div class="model-info-card">
+                        <h4>📤 模型输出预测 (Outputs)</h4>
+                        <div id="dynamic-model-outputs"></div>
+                    </div>
+                </div>
+
+                <div class="ai-title" style="margin-top: 5px; border:none; padding-bottom:0;">核心指标演化趋势 (动态融合预测)</div>
+                <div id="ai-predict-chart" style="width: 100%; height: 320px;"></div>
+            </div>
+        </div>
+
+        <div class="ai-panel ai-right" style="display: flex; flex-direction: column;">
+            <div class="ai-title">AI 智能分析与控制预期</div>
+            
+            <div class="right-content-scroll" style="flex: 1; overflow-y: auto; padding-right: 5px;">
+                <div class="advice-card" style="border-left: 4px solid #00f3ff; background: rgba(0, 243, 255, 0.05); margin-bottom: 15px;">
+                    <div class="advice-title" style="color: #00f3ff; font-size: 14px; margin-bottom: 8px;">📊 综合状态判定</div>
+                    <div class="advice-text" id="dynamic-ai-status" style="font-size: 13px; line-height: 1.6; color: #b0c4de;">
+                        状态加载中...
+                    </div>
+                </div>
+
+                <div class="advice-card" style="border-left: 4px solid #ffeb3b; background: rgba(255, 235, 59, 0.05); margin-bottom: 15px;">
+                    <div class="advice-title" style="color: #ffeb3b; font-size: 14px; margin-bottom: 8px;">🧠 核心特征解析</div>
+                    <div class="advice-text" id="dynamic-ai-analysis" style="font-size: 13px; line-height: 1.6; color: #b0c4de;">
+                        解析加载中...
+                    </div>
+                </div>
+
+                <div class="advice-card" style="border-left: 4px solid #00fa9a; background: rgba(0, 250, 154, 0.05);">
+                    <div class="advice-title" style="color: #00fa9a; font-size: 14px; margin-bottom: 8px;">⚙️ 自动化控制预期</div>
+                    <div class="advice-text" id="dynamic-ai-action" style="font-size: 13px; line-height: 1.6; color: #b0c4de;">
+                        执行指令加载中...
+                    </div>
+                    <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed rgba(0, 250, 154, 0.3); font-size: 12px; color: #00fa9a; text-align: right;">
+                        ✔ 判定指令已自动注入智控队列
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="plc-modal">
+        <div style="color:#00f3ff; margin-bottom:15px; font-size:14px;" id="plc-status">正在安全同步至现场 PLC...</div>
+        <div style="width:100%; height:10px; background:#1a365d; border-radius:5px; overflow:hidden;">
+            <div id="plc-progress" style="width:0%; height:100%; background:#00fa9a; transition: width 0.1s;"></div>
+        </div>
+    </div>
+
+    <script src="js/ai_charts.js"></script>
+</body>
+</html>

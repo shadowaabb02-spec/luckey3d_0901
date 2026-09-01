@@ -1,0 +1,2238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        if (window.location.protocol === 'file:') {
+            // Local ES modules and GLB assets must load through the HTTP entry.
+            const appUrl = new URL('http://127.0.0.1:4173/main.html');
+            appUrl.search = window.location.search;
+            appUrl.searchParams.set('v', '20260828-3d20');
+            appUrl.hash = window.location.hash;
+            window.location.replace(appUrl.href);
+        }
+    </script>
+    <title>乐凯中水双膜智慧化系统 - 宏观监控</title>
+    <link rel="stylesheet" href="css/style.css?v=20260828-expert-chat-v4">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "./vendor/three-r171/three.module.js"
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: #03101d;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #main-3d-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background: #03101d;
+        }
+
+        #main-3d-canvas canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .main-scene-loading {
+            position: fixed;
+            z-index: 8;
+            left: 50%;
+            top: 108px;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 32px;
+            padding: 0 12px;
+            color: #c5d2d5;
+            background: rgba(8, 15, 18, 0.84);
+            border: 1px solid rgba(166, 204, 211, 0.25);
+            border-radius: 5px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            font-size: 11px;
+            font-variant-numeric: tabular-nums;
+            transition: opacity 180ms ease, visibility 180ms ease;
+        }
+
+        .main-scene-loading::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #f2c66d;
+            box-shadow: 0 0 0 4px rgba(242, 198, 109, 0.12);
+        }
+
+        body.main-scene-ready .main-scene-loading {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        body.main-scene-error .main-scene-loading {
+            color: #ffb2b0;
+            border-color: rgba(255, 122, 120, 0.45);
+        }
+
+        body.main-scene-error .main-scene-loading::before {
+            background: #ff7a78;
+            box-shadow: 0 0 0 4px rgba(255, 122, 120, 0.12);
+        }
+
+        .facility-label-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 9;
+            pointer-events: none;
+        }
+
+        .facility-marker {
+            --facility-color: #72e0ae;
+            position: fixed;
+            display: none;
+            align-items: center;
+            gap: 7px;
+            min-height: 34px;
+            max-width: 146px;
+            padding: 4px 8px;
+            color: #f4f7f7;
+            background: rgba(8, 18, 20, 0.9);
+            border: 1px solid color-mix(in srgb, var(--facility-color) 58%, transparent);
+            border-radius: 5px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+            transform: translate(-50%, calc(-100% - 9px));
+            pointer-events: auto;
+            cursor: pointer;
+            transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+        }
+
+        .facility-marker[data-status="stopped"] { --facility-color: #9aa7a9; }
+        .facility-marker[data-status="maintenance"] { --facility-color: #f2c66d; }
+
+        .facility-marker:hover,
+        .facility-marker.is-selected {
+            background: rgba(7, 25, 29, 0.96);
+            border-color: var(--facility-color);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--facility-color) 32%, transparent), 0 12px 28px rgba(0, 0, 0, 0.34);
+        }
+
+        .facility-marker-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            flex: 0 0 auto;
+            color: var(--facility-color);
+        }
+
+        .facility-marker-icon svg {
+            width: 15px;
+            height: 15px;
+            stroke-width: 2;
+        }
+
+        .facility-marker[data-status="maintenance"] .facility-marker-icon svg {
+            animation: facility-tool-spin 3.2s linear infinite;
+        }
+
+        .facility-marker-copy {
+            min-width: 0;
+            text-align: left;
+        }
+
+        .facility-marker-name,
+        .facility-marker-state {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .facility-marker-name {
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .facility-marker-state {
+            margin-top: 1px;
+            color: var(--facility-color);
+            font-size: 9px;
+        }
+
+        @keyframes facility-tool-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .site-status-legend {
+            position: fixed;
+            z-index: 22;
+            top: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 28px;
+            padding: 0 10px;
+            color: #aab9bc;
+            background: rgba(8, 15, 18, 0.78);
+            border: 1px solid rgba(166, 204, 211, 0.2);
+            border-radius: 5px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            font-size: 10px;
+        }
+
+        .site-status-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+        }
+
+        .site-status-legend i {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .site-status-legend .is-running { color: #72e0ae; }
+        .site-status-legend .is-stopped { color: #9aa7a9; }
+        .site-status-legend .is-maintenance { color: #f2c66d; }
+        .site-status-legend .is-demo { color: #8ca2a6; }
+
+        .facility-inspector {
+            position: fixed;
+            z-index: 26;
+            top: 128px;
+            left: 50%;
+            width: min(340px, calc(100vw - 760px));
+            min-width: 300px;
+            padding: 12px 14px;
+            color: #eaf0f1;
+            background: rgba(7, 20, 25, 0.95);
+            border: 1px solid rgba(114, 224, 174, 0.4);
+            border-radius: 6px;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+            transform: translateX(-50%);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+        }
+
+        .facility-inspector[hidden] { display: none; }
+
+        .facility-inspector-header,
+        .facility-inspector-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .facility-inspector-kicker {
+            margin: 0 0 3px;
+            color: #7f969a;
+            font-size: 9px;
+        }
+
+        .facility-inspector h2 {
+            margin: 0;
+            font-size: 16px;
+            letter-spacing: 0;
+        }
+
+        .facility-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: #72e0ae;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+
+        .facility-status-badge::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .facility-inspector-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            color: #8fa2a6;
+            background: transparent;
+            border: 1px solid rgba(166, 204, 211, 0.18);
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .facility-inspector-close svg { width: 15px; height: 15px; }
+
+        .facility-inspector-metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0 14px;
+            margin: 10px 0;
+            padding: 8px 0;
+            border-top: 1px solid rgba(166, 204, 211, 0.15);
+            border-bottom: 1px solid rgba(166, 204, 211, 0.15);
+        }
+
+        .facility-inspector-metrics div {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .facility-inspector-metrics dt,
+        .facility-inspector-metrics dd {
+            margin: 0;
+            font-size: 10px;
+        }
+
+        .facility-inspector-metrics dt { color: #85999d; }
+        .facility-inspector-metrics dd { color: #e3ebec; font-weight: 700; }
+
+        .facility-mapping-note {
+            margin: 0;
+            color: #8ca0a4;
+            font-size: 9px;
+        }
+
+        .facility-enter-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-height: 28px;
+            padding: 0 9px;
+            color: #4bd6de;
+            border: 1px solid rgba(75, 214, 222, 0.42);
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .facility-enter-link[hidden] { display: none; }
+        .facility-enter-link svg { width: 13px; height: 13px; }
+
+        .main-scene-toolbar {
+            position: fixed;
+            z-index: 24;
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px;
+            background: rgba(8, 15, 18, 0.86);
+            border: 1px solid rgba(166, 204, 211, 0.22);
+            border-radius: 6px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.25);
+        }
+
+        .main-scene-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            color: #9cafb3;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(166, 204, 211, 0.2);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+        }
+
+        .main-scene-button:hover,
+        .main-scene-button.is-active {
+            color: #4bd6de;
+            background: rgba(75, 214, 222, 0.11);
+            border-color: rgba(75, 214, 222, 0.55);
+        }
+
+        .main-scene-button svg {
+            width: 17px;
+            height: 17px;
+            stroke-width: 1.8;
+        }
+
+        /* 让数据面板呈现“毛玻璃”透视感 */
+        .panel,
+        .data-module {
+            background: rgba(6, 20, 32, 0.76) !important;
+            backdrop-filter: blur(11px);
+            -webkit-backdrop-filter: blur(11px);
+            border: 1px solid rgba(0, 243, 255, 0.2) !important;
+        }
+
+        .bg-grid { display: none !important; }
+        /* 心跳灯动画 */
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .heartbeat-dot {
+            width: 8px; height: 8px; background: #00fa9a; border-radius: 50%;
+            box-shadow: 0 0 10px #00fa9a; animation: blink 1.5s infinite;
+        }
+        /* 💥 系统实时事件专属视觉样式 💥 */
+        @keyframes flashWarn {
+            0% { box-shadow: 0 0 2px rgba(255,77,79,0.2) inset; border-left-color: #ff4d4f; }
+            50% { box-shadow: 0 0 15px rgba(255,77,79,0.8) inset; border-left-color: #ff0000; }
+            100% { box-shadow: 0 0 2px rgba(255,77,79,0.2) inset; border-left-color: #ff4d4f; }
+        }
+        .event-item {
+            padding: 3px 6px; margin-bottom: 3px; border-radius: 3px;
+            background: rgba(255, 255, 255, 0.03); display: flex; align-items: center;
+        }
+        /* 红字闪烁预警 */
+        .event-item.warn { animation: flashWarn 1s infinite; cursor: pointer; border-left: 2px solid #ff4d4f; }
+        .event-item.warn .event-text { color: #ff4d4f; font-weight: bold; }
+        
+        /* 蓝字正常与已解决事件 */
+        .event-item.normal, .event-item.resolved { border-left: 2px solid #00f3ff; }
+        .event-item.normal .event-text, .event-item.resolved .event-text { color: #b0c4de; }
+        .event-time { color: #8898aa; font-size: 10px; margin-right: 6px; width: 52px; flex-shrink: 0; }
+        .event-text { font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* 事件库表格选中行 */
+        #event-library-tbody tr:hover { background: rgba(0, 243, 255, 0.08); }
+        #event-library-tbody tr.selected-row { background: rgba(0, 243, 255, 0.15); outline: 1px solid rgba(0,243,255,0.5); }
+
+        /* ── 系统配置弹窗横向卡片按钮 ── */
+        .config-card-row {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .config-card-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: rgba(0, 243, 255, 0.05);
+            border: 1px solid rgba(0, 243, 255, 0.25);
+            color: #8898aa;
+            padding: 10px 12px;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .config-card-btn:hover {
+            background: rgba(0, 243, 255, 0.12);
+            border-color: rgba(0, 243, 255, 0.5);
+            color: #fff;
+        }
+        .config-card-btn.active {
+            background: rgba(0, 243, 255, 0.18);
+            border-color: #00f3ff;
+            color: #00f3ff;
+            box-shadow: 0 0 12px rgba(0, 243, 255, 0.3) inset;
+        }
+        .card-icon { font-size: 16px; }
+        .modal-body .config-content { overflow-y: auto; padding-right: 5px; }
+        .modal-body .config-content::-webkit-scrollbar { width: 4px; }
+        .modal-body .config-content::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.25); border-radius: 2px; }
+
+        /* ── 专家库检索历史标签 ── */
+        .expert-tag {
+            display: inline-block;
+            background: rgba(0, 243, 255, 0.08);
+            border: 1px solid rgba(0, 243, 255, 0.25);
+            color: #b0c4de;
+            padding: 2px 10px;
+            font-size: 11px;
+            border-radius: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .expert-tag:hover {
+            background: rgba(0, 243, 255, 0.2);
+            border-color: #00f3ff;
+            color: #00f3ff;
+        }
+        .expert-tag.hot {
+            background: rgba(255, 235, 59, 0.06);
+            border-color: rgba(255, 235, 59, 0.3);
+            color: #ffeb3b;
+        }
+        .expert-tag.hot:hover {
+            background: rgba(255, 235, 59, 0.18);
+            border-color: #ffeb3b;
+        }
+
+        @media (max-width: 900px) {
+            .top-header {
+                height: 64px;
+                padding: 0 12px;
+            }
+
+            .header-title {
+                max-width: 178px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-size: 17px;
+                letter-spacing: 0;
+            }
+
+            .header-right {
+                margin-top: 0;
+            }
+
+            .header-nav .nav-btn {
+                display: none;
+            }
+
+            .header-nav .nav-btn[data-mobile-nav="primary"] {
+                display: inline-flex;
+                margin-left: 5px;
+                padding: 5px 9px;
+                font-size: 11px;
+            }
+
+            .header-info,
+            #sys-status-dot,
+            #sys-status-text,
+            .side-panel {
+                display: none !important;
+            }
+
+            .main-scene-loading {
+                top: 76px;
+                max-width: calc(100vw - 108px);
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .site-status-legend {
+                top: 72px;
+                gap: 8px;
+                max-width: calc(100vw - 24px);
+                overflow: hidden;
+            }
+
+            .site-status-legend .is-demo { display: none; }
+
+            .facility-marker {
+                width: 34px;
+                min-width: 34px;
+                max-width: 34px;
+                min-height: 34px;
+                padding: 0;
+                justify-content: center;
+            }
+
+            .facility-marker-copy { display: none; }
+
+            .facility-inspector {
+                top: auto;
+                bottom: 64px;
+                width: calc(100vw - 24px);
+                min-width: 0;
+                box-sizing: border-box;
+            }
+
+            .main-scene-toolbar {
+                bottom: max(12px, env(safe-area-inset-bottom));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="main-3d-canvas" aria-label="乐凯保定园区三维总览"></div>
+    <div class="main-scene-loading" id="main-scene-loading" aria-live="polite">正在加载厂区模型 0%</div>
+    <div class="facility-label-layer" id="facility-label-layer" aria-label="厂区功能建筑状态"></div>
+    <div class="site-status-legend" aria-label="建筑状态图例">
+        <span class="is-running"><i></i>运行</span>
+        <span class="is-stopped"><i></i>停运</span>
+        <span class="is-maintenance"><i></i>检修</span>
+        <span class="is-demo">8处功能建筑 · 演示状态</span>
+    </div>
+    <aside class="facility-inspector" id="facility-inspector" aria-live="polite" hidden>
+        <div class="facility-inspector-header">
+            <div>
+                <p class="facility-inspector-kicker" id="facility-inspector-kicker">功能建筑</p>
+                <h2 id="facility-inspector-title">中水双膜</h2>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="facility-status-badge" id="facility-inspector-status">运行</span>
+                <button class="facility-inspector-close" id="facility-inspector-close" type="button" aria-label="关闭建筑详情" title="关闭">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </div>
+        </div>
+        <dl class="facility-inspector-metrics" id="facility-inspector-metrics"></dl>
+        <div class="facility-inspector-footer">
+            <p class="facility-mapping-note" id="facility-mapping-note">模型节点已核对</p>
+            <a class="facility-enter-link" id="facility-enter-link" href="factory.html?v=20260828-3d19" hidden>
+                进入工艺流程 <i data-lucide="arrow-right" aria-hidden="true"></i>
+            </a>
+        </div>
+    </aside>
+    <div class="main-scene-toolbar" role="toolbar" aria-label="厂区模型视角">
+        <button class="main-scene-button is-active" type="button" data-main-view="overview" aria-label="园区总览" title="园区总览">
+            <i data-lucide="scan" aria-hidden="true"></i>
+        </button>
+        <button class="main-scene-button" type="button" data-main-view="project" aria-label="定位中水双膜项目" title="定位项目">
+            <i data-lucide="crosshair" aria-hidden="true"></i>
+        </button>
+        <button class="main-scene-button" type="button" data-main-view="top" aria-label="园区俯视" title="园区俯视">
+            <i data-lucide="map" aria-hidden="true"></i>
+        </button>
+        <button class="main-scene-button" id="main-auto-rotate" type="button" aria-label="开启自动旋转" title="自动旋转">
+            <i data-lucide="rotate-3d" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <div id="ui-layer">
+        <header class="top-header">
+            <div class="header-title">乐凯保定园区双膜孪生监控中心</div>
+            
+            <div style="position: absolute; left: 40px; top: 55px; display: flex; align-items: center; gap: 8px; z-index: 20;">
+                <div class="status-dot" id="sys-status-dot"></div>
+                <span id="sys-status-text" style="font-size: 13px; font-weight: bold; letter-spacing: 1px;">状态读取中...</span>
+            </div>
+
+            <div class="header-right">
+                <div class="header-nav">
+                    <button onclick="openConfigModal()" class="nav-btn" id="btn-sys-config" style="border-color: #ffeb3b; color: #ffeb3b;">系统配置</button>
+                    <button onclick="window.location.href='main.html?v=20260828-3d19'" class="nav-btn active" data-mobile-nav="primary">厂区总览</button>
+                    <button onclick="window.location.href='factory.html?v=20260828-3d19'" class="nav-btn" data-mobile-nav="primary">工艺流程</button>
+                    <button onclick="openExpertModal()" class="nav-btn" data-mobile-nav="primary">专家库</button>
+                    <button onclick="window.location.href='ai.html?v=20260828-3d19'" class="nav-btn">AI 预测中心</button>
+                    <button onclick="window.location.href='report.html?v=20260828-3d19'" class="nav-btn">数据报表</button>
+                </div>
+                <div class="header-info">
+                    <span class="user-role">👤 当前用户：系统管理员 (Admin)</span>
+                    <span class="sys-time" id="sys-clock">--加载时间--</span>
+                </div>
+            </div>
+        </header>
+
+  <div class="side-panel left-panel" id="side-left">
+            <div class="data-module" id="panel-custom-1">
+                </div>
+            <div class="data-module" id="panel-custom-2">
+                </div>
+            <div class="data-module" id="panel-custom-3">
+                </div>
+        </div>
+
+        <div class="side-panel right-panel" id="side-right">
+            <div class="data-module" id="panel-custom-4">
+                </div>
+
+            <div class="data-module" id="panel-right-2">
+                <div class="toggle-btn right-btn" onclick="togglePanel('panel-right-2', 'right')"></div>
+                <div class="module-title" style="display: flex; justify-content: space-between;">
+                    <span>AI 智能生产预测</span>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="ai-tab active" onclick="switchAIMode('dual', this)">双膜联调</button>
+                        <button class="ai-tab" onclick="switchAIMode('uf', this)">超滤专区</button>
+                        <button class="ai-tab" onclick="switchAIMode('ro', this)">RO专区</button>
+                    </div>
+                </div>
+                <div class="ai-content-scroll" id="ai-dynamic-content">
+                    </div>
+            </div>
+
+            <div class="data-module" id="panel-right-3" style="flex-shrink: 0; height: auto; min-height: 0; margin-bottom: 0; display: flex; flex-direction: column;">
+                <div class="toggle-btn right-btn" onclick="togglePanel('panel-right-3', 'right')"></div>
+                <div class="custom-panel-header" style="margin-bottom: 4px;">
+                    <div class="module-title" style="margin:0; border:none; padding:0;">系统实时事件</div>
+                    <button class="custom-config-btn" onclick="openEventLibraryModal()">查找</button>
+                </div>
+                <div class="alert-list-container" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
+                    <div id="pinned-alerts" style="flex-shrink: 0; width: 100%;"></div>
+                    <div id="normal-alerts" class="custom-panel-content" style="flex: 1; margin-top: 3px;"></div>
+                </div>
+            </div>
+
+    <div id="event-library-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 780px; width: 90%;">
+            <h3 style="color:#00f3ff; margin-top:0; border-bottom: 1px dashed rgba(0,243,255,0.3); padding-bottom: 8px;">📚 实时事件库查询</h3>
+
+            <!-- 搜索+筛选 -->
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <div style="position:relative; flex:3;">
+                    <input type="text" id="event-search-input" class="login-input" placeholder="输入事件名称进行查询…" style="margin:0; padding:8px 32px 8px 10px; font-size:13px; width:100%; box-sizing:border-box;" oninput="filterEventTable()">
+                    <span id="event-dup-hint" style="display:none; position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#ff4d4f; font-size:18px; pointer-events:none;" title="存在重名事件">⚠</span>
+                </div>
+                <select id="event-filter-status" class="login-input" style="margin:0; width:130px; padding:6px 8px; font-size:12px; height:38px; flex-shrink:0;" onchange="filterEventTable()">
+                    <option value="all">全部类型</option>
+                    <option value="normal" style="color:#00fa9a;">正常事件</option>
+                    <option value="warn_low" style="color:#ff4d4f;">低级预警</option>
+                    <option value="warn_mid" style="color:#ff4d4f;">中级预警</option>
+                    <option value="warn" style="color:#ff4d4f;">高级预警</option>
+                </select>
+            </div>
+
+            <!-- 解决方案编辑 -->
+            <div style="margin-bottom: 8px;">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                    <span style="color:#8898aa; font-size:11px;">💡 选中事件的解决方案</span>
+                    <span id="solution-event-name" style="color:#00f3ff; font-size:11px;"></span>
+                </div>
+                <textarea id="event-solution-input" class="login-input" placeholder="点击下方表格某行查看/编辑该事件的解决方案…" style="margin:0; width:100%; box-sizing:border-box; padding:6px 10px; font-size:12px; resize:none; height:52px;" oninput="updateEventSolution()"></textarea>
+            </div>
+
+            <!-- 数据表格 -->
+            <div class="scroll-table" style="max-height: 260px; overflow-y: auto; margin-bottom: 8px;">
+                <table class="tech-table compact" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="position: sticky; top:0; background:#07152b; width: 16%;">发生时间</th>
+                            <th style="position: sticky; top:0; background:#07152b; width: 54%;">事件名称</th>
+                            <th style="position: sticky; top:0; background:#07152b; width: 14%;">状态</th>
+                            <th style="position: sticky; top:0; background:#07152b; width: 16%;">匹配度</th>
+                        </tr>
+                    </thead>
+                    <tbody id="event-library-tbody"></tbody>
+                </table>
+            </div>
+
+            <!-- 触发参数配置（折叠区） -->
+            <details style="margin-bottom: 8px;">
+                <summary style="color:#00f3ff; font-size:12px; cursor:pointer; padding:4px 0;">⚡ 触发参数配置 (可选)</summary>
+                <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+                    <input type="text" id="trigger-param-name" class="login-input" placeholder="参数名" style="margin:0; flex:1; padding:4px 8px; font-size:11px;">
+                    <span style="color:#8898aa; font-size:11px;">区间</span>
+                    <input type="number" id="trigger-param-min" class="login-input" placeholder="下限" style="margin:0; width:65px; padding:4px; font-size:11px;">
+                    <span style="color:#8898aa;">~</span>
+                    <input type="number" id="trigger-param-max" class="login-input" placeholder="上限" style="margin:0; width:65px; padding:4px; font-size:11px;">
+                    <button class="nav-btn" style="padding:3px 10px; font-size:11px; white-space:nowrap;" onclick="addTriggerParam()">添加</button>
+                </div>
+                <div id="trigger-params-list" style="min-height:0; margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;"></div>
+            </details>
+
+            <div style="display: flex; justify-content: flex-end;">
+                <span style="color:#8898aa; font-size:11px; margin-right:auto; line-height:30px;" id="event-count-label"></span>
+                <button class="nav-btn" onclick="closeModal('event-library-modal')">关闭页面</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="alert-action-modal" class="modal-overlay" style="z-index: 9999;">
+        <div class="modal-box" style="max-width: 450px; border-color: #ff4d4f; box-shadow: 0 0 30px rgba(255,77,79,0.3);">
+            <h3 style="color:#ff4d4f; margin-top:0; display:flex; align-items:center; gap:8px;">🚨 发现高级别异常预警</h3>
+            <div id="alert-action-content" style="color:#b0c4de; font-size: 14px; line-height: 1.6; margin-bottom: 20px;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="nav-btn" onclick="closeModal('alert-action-modal')">暂不处理 (继续预警)</button>
+                <button class="nav-btn active" id="btn-resolve-alert" style="border-color:#00fa9a; color:#00fa9a; background: rgba(0,250,154,0.1);">✅ 已解决该预警</button>
+            </div>
+        </div>
+    </div>
+        </div>
+
+    <div id="main-config-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 600px;">
+            <h3 style="color:#00f3ff; margin-top:0; border-bottom: 1px dashed rgba(0,243,255,0.3); padding-bottom: 10px;">⚙️ 看板自定义配置 (最多选7项)</h3>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button class="nav-btn active" id="tab-btn-data" onclick="switchConfigTab('data')" style="flex:1; font-size:12px;">🔢 数据指标</button>
+                <button class="nav-btn" id="tab-btn-chart" onclick="switchConfigTab('chart')" style="flex:1; font-size:12px;">📈 动态图表</button>
+            </div>
+
+            <div id="config-area-data" style="display: block;">
+                <p style="color:#8898aa; font-size:11px; margin-bottom: 8px;">勾选需展示的数据指标（最多7项），保存后面板自动刷新：</p>
+                <div id="main-metric-list" class="checkbox-grid" style="grid-template-columns: 1fr 1fr 1fr; max-height: 300px;"></div>
+            </div>
+
+            <div id="config-area-chart" style="display: none;">
+                <p style="color:#8898aa; font-size:11px; margin-bottom: 8px;">选择需展示的统计图表（单选），保存后面板自动刷新：</p>
+                <div id="main-chart-list" class="checkbox-grid" style="grid-template-columns: 1fr 1fr; max-height: 200px;"></div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; margin-top: 15px;">
+                <input type="text" id="custom-panel-title" class="login-input" style="width: 50%; margin:0; padding:6px 10px; font-size:13px;" placeholder="自定义板块标题">
+                <div style="display: flex; gap: 8px;">
+                    <button class="nav-btn" onclick="closeMainConfigModal()">取消</button>
+                    <button class="nav-btn active" onclick="saveMainConfig()">确认保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+<div id="sys-config-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 860px; width: 95%;">
+            <div class="modal-header">
+                <h2>⚙️ 系统控制台配置 (Admin)</h2>
+                <button class="close-btn" onclick="closeModal('sys-config-modal')">×</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+                <!-- 横向卡片按钮 -->
+                <div class="config-card-row">
+                    <button class="config-card-btn active" onclick="switchConfigCard(this, 'user-mgmt')">
+                        <span class="card-icon">👤</span><span>用户管理</span>
+                    </button>
+                    <button class="config-card-btn" onclick="switchConfigCard(this, 'perm-mgmt')">
+                        <span class="card-icon">🔐</span><span>权限管理</span>
+                    </button>
+                    <button class="config-card-btn" onclick="switchConfigCard(this, 'expert-config-v2')">
+                        <span class="card-icon">📚</span><span>专家库配置</span>
+                    </button>
+                    <button class="config-card-btn" onclick="switchConfigCard(this, 'event-config-v2')">
+                        <span class="card-icon">⚡</span><span>事件配置</span>
+                    </button>
+                </div>
+                <!-- 内容区 -->
+                <div class="config-content" style="max-height: 380px; flex: none;">
+                    <!-- 1. 用户管理 -->
+                    <div id="user-mgmt" class="tab-pane active">
+                        <div style="display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap;">
+                            <div style="flex:1; min-width: 120px;">
+                                <label style="font-size:11px; color:#8898aa;">用户名</label>
+                                <input type="text" id="um-username" class="login-input" style="margin:0; padding:6px 10px; font-size:13px;" placeholder="输入用户名">
+                            </div>
+                            <div style="flex:1; min-width: 120px;">
+                                <label style="font-size:11px; color:#8898aa;">密码</label>
+                                <input type="text" id="um-password" class="login-input" style="margin:0; padding:6px 10px; font-size:13px;" placeholder="输入密码">
+                            </div>
+                            <div style="flex:1; min-width: 130px;">
+                                <label style="font-size:11px; color:#8898aa;">归属用户组</label>
+                                <select id="um-group" class="login-input" style="margin:0; padding:6px 10px; font-size:13px; height:36px;">
+                                    <option value="admin">Admin组</option>
+                                    <option value="product">产品组</option>
+                                    <option value="ops">运营组</option>
+                                </select>
+                            </div>
+                            <button class="nav-btn active" onclick="addUser()" style="height:36px; white-space:nowrap;">➕ 新增用户</button>
+                        </div>
+                        <div class="scroll-table" style="max-height: 200px; overflow-y: auto;">
+                            <table class="tech-table compact" style="width:100%;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:30%;">用户名</th>
+                                        <th style="width:25%;">所属用户组</th>
+                                        <th style="width:25%;">创建时间</th>
+                                        <th style="width:20%;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-table-body"></tbody>
+                            </table>
+                        </div>
+                        <div id="um-edit-row" style="display:none; margin-top: 10px; padding: 10px; background: rgba(0,243,255,0.05); border-radius: 6px; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+                            <div style="flex:1; min-width: 120px;">
+                                <label style="font-size:11px; color:#8898aa;">新密码</label>
+                                <input type="text" id="um-edit-pwd" class="login-input" style="margin:0; padding:6px 10px; font-size:13px;" placeholder="留空则不修改">
+                            </div>
+                            <div style="flex:1; min-width: 130px;">
+                                <label style="font-size:11px; color:#8898aa;">更换用户组</label>
+                                <select id="um-edit-group" class="login-input" style="margin:0; padding:6px 10px; font-size:13px; height:36px;">
+                                    <option value="admin">Admin组</option>
+                                    <option value="product">产品组</option>
+                                    <option value="ops">运营组</option>
+                                </select>
+                            </div>
+                            <button class="nav-btn active" onclick="saveEditUser()" style="height:36px;">💾 保存修改</button>
+                            <button class="nav-btn" onclick="cancelEditUser()" style="height:36px;">取消</button>
+                        </div>
+                    </div>
+                    <!-- 2. 权限管理 -->
+                    <div id="perm-mgmt" class="tab-pane" style="display: none;">
+                        <p style="color:#8898aa; font-size:12px; margin-bottom: 10px;">勾选启用权限（√），取消勾选禁用（×），修改后点击下方保存按钮生效。</p>
+                        <div class="scroll-table" style="max-height: 260px; overflow-y: auto;">
+                            <table class="tech-table compact" style="width:100%;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:15%;">用户组</th>
+                                        <th style="width:10%;">系统配置</th>
+                                        <th style="width:10%;">厂区总览</th>
+                                        <th style="width:10%;">工艺流程</th>
+                                        <th style="width:10%;">专家库</th>
+                                        <th style="width:12%;">AI预测中心</th>
+                                        <th style="width:10%;">数据分析</th>
+                                        <th style="width:10%;">查看报表</th>
+                                        <th style="width:13%;">导出Excel</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="perm-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- 3. 专家库配置 -->
+                    <div id="expert-config-v2" class="tab-pane" style="display: none;">
+                        <div style="margin-bottom: 15px; display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="new-expert-error" class="login-input" placeholder="故障现象" style="margin:0; flex: 2; font-size:12px;">
+                            <input type="text" id="new-expert-cause" class="login-input" placeholder="原因分析" style="margin:0; flex: 3; font-size:12px;">
+                            <input type="text" id="new-expert-fix" class="login-input" placeholder="解决方案" style="margin:0; flex: 3; font-size:12px;">
+                            <button class="nav-btn active" onclick="addExpertEntry()">➕ 新增</button>
+                        </div>
+                        <div class="scroll-table" style="max-height: 220px; overflow-y: auto;">
+                            <table class="tech-table compact" style="width:100%;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:22%;">故障现象</th>
+                                        <th style="width:35%;">原因分析</th>
+                                        <th style="width:35%;">解决方案</th>
+                                        <th style="width:8%;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="expert-config-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- 4. 事件配置 -->
+                    <div id="event-config-v2" class="tab-pane" style="display: none;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                            <button class="config-card-btn active" style="flex:1; padding: 6px;" onclick="switchEventSubTab('events', this)">📋 事件库配置</button>
+                            <button class="config-card-btn" style="flex:1; padding: 6px;" onclick="switchEventSubTab('alarms', this)">🚨 报警触发条件</button>
+                            <button class="config-card-btn" style="flex:1; padding: 6px;" onclick="switchEventSubTab('models', this)">🤖 模型状态管理</button>
+                        </div>
+                        <!-- 事件库配置子页 -->
+                        <div id="ev-sub-events">
+                            <div style="display: flex; gap: 8px; margin-bottom: 10px; align-items: center;">
+                                <input type="text" id="ev2-name" class="login-input" placeholder="事件名称" style="margin:0; flex: 3; font-size:12px;">
+                                <select id="ev2-status" class="login-input" style="margin:0; flex: 1; font-size:12px; padding:6px;">
+                                    <option value="normal">正常事件</option>
+                                    <option value="warn">预警事件</option>
+                                </select>
+                                <input type="text" id="ev2-solution" class="login-input" placeholder="预警方案(选填)" style="margin:0; flex: 3; font-size:12px;">
+                                <button class="nav-btn active" onclick="addEventV2()">➕ 新增</button>
+                            </div>
+                            <div class="scroll-table" style="max-height: 160px; overflow-y: auto;">
+                                <table class="tech-table compact" style="width:100%;">
+                                    <thead>
+                                        <tr><th style="width:20%;">时间</th><th style="width:40%;">事件名称</th><th style="width:20%;">状态</th><th style="width:20%;">操作</th></tr>
+                                    </thead>
+                                    <tbody id="ev2-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <!-- 报警触发条件子页 -->
+                        <div id="ev-sub-alarms" style="display:none;">
+                            <div style="display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap;">
+                                <input type="text" id="alm-trigger-name" class="login-input" placeholder="触发条件名称" style="margin:0; flex: 2; font-size:12px; min-width:140px;">
+                                <select id="alm-trigger-preset" class="login-input" style="margin:0; flex: 1; font-size:12px; padding:6px; min-width:120px;" onchange="applyAlarmPreset()">
+                                    <option value="">-- 选择预设模板 --</option>
+                                    <option value="tmp">超滤TMP超限</option>
+                                    <option value="orp">RO进水ORP超限</option>
+                                    <option value="press">过滤器压差异常</option>
+                                    <option value="turb">产水浊度超标</option>
+                                    <option value="cond">RO产水电导率超标</option>
+                                </select>
+                                <button class="nav-btn active" onclick="addAlarmTrigger()">➕ 新增条件</button>
+                            </div>
+                            <div class="scroll-table" style="max-height: 160px; overflow-y: auto;">
+                                <table class="tech-table compact" style="width:100%;">
+                                    <thead>
+                                        <tr><th style="width:25%;">条件名称</th><th style="width:25%;">阈值</th><th style="width:15%;">等级</th><th style="width:20%;">预设模板</th><th style="width:15%;">操作</th></tr>
+                                    </thead>
+                                    <tbody id="alm-trigger-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <!-- 模型状态管理子页 -->
+                        <div id="ev-sub-models" style="display:none;">
+                            <p style="color:#8898aa; font-size:12px; margin-bottom: 10px;">手动覆盖 AI 预测模型的运行状态（修改后即时生效，自动同步期间可能被系统逻辑再次变更）。</p>
+                            <div class="scroll-table" style="max-height: 240px; overflow-y: auto;">
+                                <table class="tech-table compact" style="width:100%;">
+                                    <thead>
+                                        <tr><th style="width:8%;">#</th><th style="width:52%;">模型名称</th><th style="width:18%;">当前状态</th><th style="width:22%;">手动覆盖</th></tr>
+                                    </thead>
+                                    <tbody id="model-status-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="nav-btn" onclick="closeModal('sys-config-modal')">关闭</button>
+                <button class="nav-btn active" id="btn-save-config" onclick="saveCurrentConfig()">💾 保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="expert-modal" class="modal-overlay">
+        <div class="modal-box expert-modal-box expert-chat-modal">
+            <div class="modal-header expert-modal-header">
+                <h2><span class="expert-title-icon" aria-hidden="true">◌</span>水务专家</h2>
+                <div class="expert-header-actions">
+                    <div id="expert-runtime-status" class="expert-runtime-status" aria-live="polite"></div>
+                    <button class="close-btn" onclick="closeModal('expert-modal')">×</button>
+                </div>
+            </div>
+            <div class="modal-body expert-workspace">
+                <section class="expert-chat-stage" aria-label="专家问答">
+                    <div id="expert-results" class="expert-results" aria-live="polite">
+                        <div class="expert-empty-state">
+                            <span class="expert-empty-mark" aria-hidden="true">✦</span>
+                            <h3>今天想分析什么？</h3>
+                            <p>描述异常现象，我会按“现象理解、核验项、补充数据”组织建议。</p>
+                        </div>
+                    </div>
+                </section>
+                <div id="expert-history-zone" class="expert-question-strip">
+                    <div id="expert-alert-row" class="expert-alert-row" hidden>
+                        <span class="expert-question-label expert-alert-label">最新预警</span>
+                        <div id="expert-recent-alerts" aria-live="polite"></div>
+                    </div>
+                    <div id="expert-history-row" class="expert-history-row">
+                        <span class="expert-question-label">最近</span>
+                        <div id="expert-history-tags"></div>
+                        <button id="btn-clear-history" onclick="clearExpertHistory()" type="button" style="display:none;">清空</button>
+                    </div>
+                    <div id="expert-hot-row" class="expert-hot-row">
+                        <span class="expert-question-label">可以这样问</span>
+                        <div id="expert-hot-tags"></div>
+                    </div>
+                </div>
+                <div class="expert-search-console">
+                    <div class="expert-query-row">
+                        <span class="expert-search-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.7" cy="10.7" r="5.9"></circle><path d="m15.2 15.2 5 5"></path></svg>
+                        </span>
+                        <input type="text" id="expert-search" class="login-input" placeholder="继续追问，或描述新的异常…" autocomplete="off">
+                        <label class="expert-equipment-control" for="expert-equipment-filter">
+                            <select id="expert-equipment-filter" aria-label="设备范围">
+                                <option value="all">全部设备</option>
+                                <option value="uf">超滤 / 预处理</option>
+                                <option value="ro">RO / 高压泵</option>
+                                <option value="chemical">加药 / CIP</option>
+                                <option value="instrument">仪表 / 阀门</option>
+                                <option value="automation">PLC / 通讯</option>
+                            </select>
+                        </label>
+                        <button id="expert-submit" class="nav-btn active" type="button" aria-label="开始分析">
+                            <span class="expert-submit-label">分析</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
+                        </button>
+                    </div>
+                    <p class="expert-composer-note">仅给出可核验建议，不执行现场控制。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="high-alert-modal" class="modal-overlay alert-overlay">
+        <div class="modal-box alert-box">
+            <h1 style="color: #ff4d4f; text-shadow: 0 0 15px #ff4d4f; margin-top: 0;">⚠️ 高级紧急预警触发！</h1>
+            <h3 id="alert-title" style="color: #fff;">【超滤段】多介质过滤器进水压力异常偏高</h3>
+            <div style="background: rgba(255, 77, 79, 0.1); border: 1px dashed #ff4d4f; padding: 15px; text-align: left; margin: 20px 0;">
+                <h4 style="color: #ffeb3b; margin-top:0;">💡 专家库智能处理建议：</h4>
+                <p id="alert-solution" style="color: #fff; line-height: 1.6; font-size: 14px;">建议内容</p>
+            </div>
+            <div style="display: flex; justify-content: center; gap: 20px;">
+                <button class="nav-btn" style="background:transparent; color:#ff4d4f; border-color:#ff4d4f; width: 150px;" onclick="handleAlertCancel()">取消 (稍后处理)</button>
+                <button class="nav-btn" style="background:#ff4d4f; border-color:#ff4d4f; width: 150px;" onclick="handleAlertProcess()">立即处理</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="event-config-modal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 650px;">
+            <div class="modal-header">
+                <h2>📝 实时事件库与报警模拟控制台</h2>
+                <button class="close-btn" onclick="closeModal('event-config-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <input type="text" id="ev-add-time" class="login-input" placeholder="时间 (如 16:30)" style="width: 20%; margin-bottom: 0;">
+                    <input type="text" id="ev-add-name" class="login-input" placeholder="输入事件或预警名称" style="width: 45%; margin-bottom: 0;">
+                    <select id="ev-add-status" class="login-input" style="width: 20%; margin-bottom: 0; padding: 0 10px;">
+                        <option value="normal">正常 (蓝)</option>
+                        <option value="warning">预警 (红)</option>
+                    </select>
+                    <button class="nav-btn" onclick="addEventToLibrary()">添加</button>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <input type="text" id="ev-search" class="login-input" placeholder="🔍 搜索过滤事件名称..." onkeyup="searchEventLibrary()" style="width: 100%; margin-bottom: 0;">
+                </div>
+                <div id="event-library-list" style="height: 200px; overflow-y: auto; background: rgba(0,243,255,0.05); padding: 10px; border-radius: 4px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+ <script src="js/mockData.js"></script>
+
+    <script>
+        // ================= 1. 基础 UI 与弹窗交互 =================
+        function togglePanel(panelId, side) {
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            if (side === 'left') panel.classList.toggle('hidden-left');
+            else panel.classList.toggle('hidden-right');
+            setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 400);
+        }
+
+        function openConfigModal() { document.getElementById('sys-config-modal').classList.add('show'); }
+        function openExpertModal() { 
+            document.getElementById('expert-modal').classList.add('show'); 
+            renderExpertHistory();
+            if (typeof window.renderExpertRecentAlerts === 'function') window.renderExpertRecentAlerts();
+            document.getElementById('expert-search').value = '';
+            if (window.ExpertAssistant) window.ExpertAssistant.reset();
+            else document.getElementById('expert-results').innerHTML = '<div class="expert-empty-state"><span class="expert-empty-mark" aria-hidden="true">✦</span><h3>今天想分析什么？</h3><p>描述异常现象，我会按“现象理解、核验项、补充数据”组织建议。</p></div>';
+        }
+        function openEventConfigModal() { 
+            document.getElementById('event-config-modal').classList.add('show'); 
+            renderEventLibrary(); 
+        }
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+        function switchConfigCard(btn, paneId) {
+            document.querySelectorAll('.config-card-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+            btn.classList.add('active');
+            const pane = document.getElementById(paneId);
+            if (pane) pane.style.display = 'block';
+            currentConfigPane = paneId;
+        }
+
+        // ================= 2. 顶部状态字典与实时时钟 =================
+        const deviceStatusMap = {
+            running:     { text: '厂区状态：运行中', color: '#00fa9a' },
+            warning:     { text: '厂区状态：警报',   color: '#ff4d4f' },
+            maintenance: { text: '厂区状态：检修',   color: '#ffeb3b' },
+            stopped:     { text: '厂区状态：停机',   color: '#9e9e9e' }
+        };
+
+        function updateSystemStatus() {
+            const hasWarn = sysEventsList.some(e => e.status === 'warn');
+            const statusCode = hasWarn ? 'warning' : 'running';
+            const statusObj = deviceStatusMap[statusCode] || deviceStatusMap['stopped'];
+            const dotEl = document.getElementById('sys-status-dot');
+            const textEl = document.getElementById('sys-status-text');
+            if(textEl) { textEl.innerText = statusObj.text; textEl.style.color = statusObj.color; }
+            if(dotEl) { dotEl.style.backgroundColor = statusObj.color; dotEl.style.boxShadow = `0 0 10px ${statusObj.color}`; }
+        }
+
+        function startLiveClock() {
+            const clockEl = document.getElementById('sys-clock');
+            if(!clockEl) return;
+            setInterval(() => {
+                const now = new Date();
+                const yyyy = now.getFullYear(), mm = String(now.getMonth() + 1).padStart(2, '0'), dd = String(now.getDate()).padStart(2, '0');
+                const hh = String(now.getHours()).padStart(2, '0'), min = String(now.getMinutes()).padStart(2, '0'), ss = String(now.getSeconds()).padStart(2, '0');
+                clockEl.innerText = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+            }, 1000);
+        }
+
+   
+       // ================= 💥 系统事件库全套逻辑 💥 =================
+        // 数据结构: { id, time, name, status('normal'|'warn'|'resolved'), solution }
+        let sysEventsList = [
+            { 
+                id: Date.now()-120000, 
+                time: new Date(Date.now()-120000).toLocaleTimeString('zh-CN',{hour12:false}), 
+                name: '超滤 A 段物理气水联合反洗执行完毕，产水气动阀已平滑开启', 
+                status: 'normal', 
+                solution: '' 
+            },
+            { 
+                id: Date.now()-60000, 
+                time: new Date(Date.now()-60000).toLocaleTimeString('zh-CN',{hour12:false}), 
+                name: '⚠ 超滤 B 段跨膜压差(TMP)突增突破 0.12MPa，产水通量锐减', 
+                status: 'warn', 
+                solution: '判定为前端原水浊度冲击导致的胶体污堵。建议立即下发化学加强反洗(CEB)指令，自动投加 NaClO (500ppm) 与 NaOH (pH=11) 联合浸泡 30 分钟。' 
+            },
+            { 
+                id: Date.now()-30000, 
+                time: new Date(Date.now()-30000).toLocaleTimeString('zh-CN',{hour12:false}), 
+                name: '⚠ RO 进水端 ORP 读数达 280mV，存在游离余氯氧化破膜风险', 
+                status: 'warn', 
+                solution: '极高风险！系统已自动联锁切断高压泵。请立即排查还原剂（亚硫酸氢钠）加药系统：检查计量泵膜片是否破裂、背压阀是否堵塞或药箱是否抽空。' 
+            }
+        ];
+
+        // 只暴露当前事件流中的预警事实，用于专家库“最新预警”检索。
+        // 不向专家模型透传此处的预置处置文字，避免把演示内容当作现场结论。
+        window.getRecentExpertAlerts = function() {
+            return [...sysEventsList]
+                .filter(ev => ev.status === 'warn')
+                .sort((a, b) => b.id - a.id)
+                .slice(0, 3)
+                .map(ev => ({ id: ev.id, time: ev.time, name: ev.name, status: ev.status }));
+        };
+
+        // 渲染主面板事件
+        window.renderSysEvents = function() {
+            const pinnedEl = document.getElementById('pinned-alerts');
+            const normalEl = document.getElementById('normal-alerts');
+            if(!pinnedEl || !normalEl) return;
+
+            let pinnedHtml = '';
+            let normalHtml = '';
+
+            // 时间倒序（最新在上）
+            const sorted = [...sysEventsList].sort((a, b) => b.id - a.id);
+
+            sorted.forEach(ev => {
+                if(ev.status === 'warn') {
+                    // 置顶且可点击出弹窗
+                    pinnedHtml += `
+                        <div class="event-item warn" onclick="openAlertModal(${ev.id})">
+                            <span class="event-time">[${ev.time}]</span><span class="event-text">${ev.name}</span>
+                        </div>`;
+                } else {
+                    // 正常或已解决事件排在下方可滚动区域
+                    normalHtml += `
+                        <div class="event-item ${ev.status}">
+                            <span class="event-time">[${ev.time}]</span><span class="event-text">${ev.name}</span>
+                        </div>`;
+                }
+            });
+
+            pinnedEl.innerHTML = pinnedHtml;
+            normalEl.innerHTML = normalHtml;
+            updateSystemStatus();
+            if (typeof window.renderExpertRecentAlerts === 'function') window.renderExpertRecentAlerts();
+        };
+
+        // 通用关闭弹窗
+        window.closeModal = function(id) { 
+            const el = document.getElementById(id); 
+            if(el) el.classList.remove('show'); 
+        };
+
+        // 打开事件库弹窗（纯查询模式）
+        window.openEventLibraryModal = function() {
+            document.getElementById('event-search-input').value = '';
+            document.getElementById('event-filter-status').value = 'all';
+            document.getElementById('event-solution-input').value = '';
+            document.getElementById('solution-event-name').innerText = '';
+            document.getElementById('event-dup-hint').style.display = 'none';
+            document.getElementById('trigger-params-list').innerHTML = '';
+            document.getElementById('event-count-label').innerText = '';
+            selectedEventId = null;
+            filterEventTable();
+            document.getElementById('event-library-modal').classList.add('show');
+        };
+
+        window.filterEventTable = function() {
+            var tbody = document.getElementById('event-library-tbody');
+            if (!tbody) return;
+            var keyword = (document.getElementById('event-search-input').value || '').trim().toLowerCase();
+            var filterStatus = document.getElementById('event-filter-status').value;
+            var dupHint = document.getElementById('event-dup-hint');
+
+            if (keyword && sysEventsList.filter(function(ev){return ev.name.toLowerCase() === keyword;}).length > 1) {
+                dupHint.style.display = 'block';
+            } else {
+                dupHint.style.display = 'none';
+            }
+
+            var filtered = sysEventsList.filter(function(ev) {
+                if (keyword && !ev.name.toLowerCase().includes(keyword)) return false;
+                if (filterStatus === 'normal') return ev.status === 'normal' || ev.status === 'resolved';
+                if (filterStatus !== 'all') return ev.status === filterStatus || ev.status === 'warn';
+                return true;
+            });
+
+            var sorted = filtered.sort(function(a, b) { return b.id - a.id; });
+            var html = '';
+            sorted.forEach(function(ev, idx) {
+                var st, sc;
+                if (ev.status === 'warn') { st = '高级预警'; sc = '#ff4d4f'; }
+                else if (ev.status === 'warn_mid') { st = '中级预警'; sc = '#ff4d4f'; }
+                else if (ev.status === 'warn_low') { st = '低级预警'; sc = '#ff9800'; }
+                else if (ev.status === 'resolved') { st = '已闭环'; sc = '#00f3ff'; }
+                else { st = '正常'; sc = '#00fa9a'; }
+
+                var score = keyword ? Math.min(100, Math.round(60 + keyword.length / Math.max(ev.name.length, 1) * 40)) : 0;
+                var selClass = (ev.id === selectedEventId) ? ' selected-row' : '';
+                html += '<tr class="' + selClass + '" onclick="selectEventRow(' + ev.id + ', this)" style="cursor:pointer;">' +
+                    '<td style="font-size:11px;">' + ev.time + '</td>' +
+                    '<td style="color:#fff;font-size:11px;">' + (keyword && ev.name.toLowerCase().includes(keyword) ? ev.name.replace(new RegExp('(' + keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'), '<mark style="background:#ffeb3b;color:#020917;padding:0 2px;">$1</mark>') : ev.name) + '</td>' +
+                    '<td><span style="color:' + sc + ';font-weight:bold;font-size:11px;">' + st + '</span></td>' +
+                    '<td style="font-size:11px;">' + (keyword ? '<span style="color:#ffeb3b;">' + score + '%</span>' : '-') + '</td></tr>';
+            });
+            if (sorted.length === 0) html = '<tr><td colspan="4" style="color:#666;">无匹配事件记录</td></tr>';
+            tbody.innerHTML = html;
+            document.getElementById('event-count-label').innerText = '共 ' + filtered.length + ' 条' + (filterStatus !== 'all' ? ' · 已筛选' : '');
+        };
+
+        var selectedEventId = null;
+        window.selectEventRow = function(id, rowEl) {
+            selectedEventId = id;
+            var prev = document.querySelector('#event-library-tbody tr.selected-row');
+            if (prev) prev.classList.remove('selected-row');
+            rowEl.classList.add('selected-row');
+            var ev = sysEventsList.find(function(e) { return e.id === id; });
+            if (ev) {
+                document.getElementById('event-solution-input').value = ev.solution || '';
+                document.getElementById('solution-event-name').innerText = '— ' + ev.name.substring(0, 30) + (ev.name.length > 30 ? '…' : '');
+            }
+        };
+
+        window.updateEventSolution = function() {
+            if (!selectedEventId) return;
+            var ev = sysEventsList.find(function(e) { return e.id === selectedEventId; });
+            if (ev) { ev.solution = document.getElementById('event-solution-input').value; renderSysEvents(); }
+        };
+
+        var triggerParams = [];
+        window.addTriggerParam = function() {
+            var nm = document.getElementById('trigger-param-name').value.trim();
+            var mn = parseFloat(document.getElementById('trigger-param-min').value);
+            var mx = parseFloat(document.getElementById('trigger-param-max').value);
+            if (!nm) return alert('请输入参数名！');
+            if (isNaN(mn) || isNaN(mx)) return alert('请输入有效数值区间！');
+
+            var limits = { 'TMP': 0.15, 'ORP': 300, '压差': 0.20, '浊度': 1.0, '电导率': 25, 'pH': 10, '液位': 5, '频率': 50 };
+            var limit = null;
+            for (var k in limits) { if (nm.indexOf(k) !== -1) { limit = limits[k]; break; } }
+            if (limit && mx > limit) { if (!confirm('⚠ [' + nm + '] 上限 ' + mx + ' 超出预设最大值 ' + limit + '，确认继续？')) return; }
+
+            triggerParams.push({ name: nm, min: mn, max: mx });
+            renderTriggerParams();
+            document.getElementById('trigger-param-name').value = '';
+            document.getElementById('trigger-param-min').value = '';
+            document.getElementById('trigger-param-max').value = '';
+        };
+
+        function renderTriggerParams() {
+            var el = document.getElementById('trigger-params-list');
+            if (!el) return;
+            el.innerHTML = triggerParams.map(function(p, i) {
+                return '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(0,243,255,0.1);border:1px solid rgba(0,243,255,0.25);padding:2px 8px;border-radius:10px;font-size:10px;color:#b0c4de;">' +
+                    p.name + ': ' + p.min + '~' + p.max +
+                    ' <span onclick="removeTriggerParam(' + i + ')" style="color:#ff4d4f;cursor:pointer;font-weight:bold;">×</span></span>';
+            }).join('');
+        }
+
+        window.removeTriggerParam = function(idx) { triggerParams.splice(idx, 1); renderTriggerParams(); };
+
+        // 新增事件下发 (增)
+        window.addNewSysEvent = function() {
+            const nameEl = document.getElementById('new-event-name');
+            const statusEl = document.getElementById('new-event-status');
+            const solutionEl = document.getElementById('new-event-solution');
+            
+            if(!nameEl.value.trim()) return alert('请输入事件名称！');
+
+            const newEvent = {
+                id: Date.now(),
+                time: new Date().toLocaleTimeString('zh-CN', {hour12:false}),
+                name: nameEl.value.trim(),
+                status: statusEl.value,
+                solution: solutionEl.value.trim() || '暂无系统推荐方案，请联系工艺工程师排查。'
+            };
+
+            sysEventsList.push(newEvent);
+            
+            // 缓存防溢出（仅保留近 100 条）
+            if(sysEventsList.length > 100) sysEventsList.shift();
+
+            // 若为高级预警，立刻触发大屏全界面红色强弹窗
+            if(newEvent.status === 'warn') {
+                openAlertModal(newEvent.id);
+            }
+
+            nameEl.value = ''; solutionEl.value = '';
+            if (typeof filterEventTable === 'function') filterEventTable();
+            renderSysEvents();
+        };
+
+        // 解决预警的处理逻辑
+        let currentAlertId = null;
+        window.openAlertModal = function(id) {
+            const ev = sysEventsList.find(e => e.id === id);
+            if(!ev) return;
+            currentAlertId = id;
+            
+            document.getElementById('alert-action-content').innerHTML = `
+                <p><strong>异常节点：</strong> <span style="color:#ff4d4f; font-size:16px;">${ev.name}</span></p>
+                <p><strong>发现时间：</strong> ${ev.time}</p>
+                <div style="background:rgba(255,235,59,0.1); padding:10px; border-left:3px solid #ffeb3b; margin-top:15px;">
+                    <strong style="color:#ffeb3b;">💡 AI 专家诊断与干预预案：</strong><br>
+                    <span style="color:#fff; display:block; margin-top:8px;">${ev.solution}</span>
+                </div>
+            `;
+            document.getElementById('alert-action-modal').classList.add('show');
+            
+            // 绑定解决按钮
+            document.getElementById('btn-resolve-alert').onclick = function() {
+                const target = sysEventsList.find(e => e.id === currentAlertId);
+                if(target) {
+                    target.status = 'resolved'; // 变为蓝色正常状态
+                    target.name = "✅ (故障已消缺) " + target.name.replace('⚠ ', '');
+                    renderSysEvents();
+                    if (typeof filterEventTable === 'function') filterEventTable();
+                }
+                closeModal('alert-action-modal');
+            };
+        };
+
+        // 负责启动和随机模拟正常工艺心跳日志
+       // 负责启动和随机模拟正常/异常工艺心跳日志 (双线定时器)
+        window.scheduleAlerts = function() {
+            renderSysEvents(); // 初始化渲染
+            
+            // 正常运行日志库 (蓝字)
+            const normalMsgs = [
+                '阻垢剂加药泵(P-201)运行频率自动寻优至 35.2Hz，药耗处于最优区间', 
+                '反渗透 1# 保安过滤器进出口压差 0.05MPa，滤芯状态良好', 
+                '脱盐水池产水在线电导率仪探头自校准完成，零点漂移正常',
+                '原水箱液位触发中位标高(2.5m)，原水提升泵平滑变频起泵',
+                'PLC 现场控制柜与云端孪生引擎历史台账异步对齐完成',
+                '自清洗过滤器滤网压差归零，自动排污气动阀关闭就位'
+            ];
+
+            // 异常预警事件库 (红字 + 弹窗方案)
+            const warnMsgs = [
+                { 
+                    name: '⚠ 超滤 A 段跨膜压差(TMP)突增突破 0.12MPa', 
+                    solution: '判定为前端原水浊度冲击导致的胶体污堵。建议立即下发化学加强反洗(CEB)指令，自动投加 NaClO (500ppm) 与 NaOH (pH=11) 联合浸泡 30 分钟。' 
+                },
+                { 
+                    name: '⚠ RO 进水端 ORP 读数达 280mV，存在氧化破膜风险', 
+                    solution: '极高风险！系统已自动联锁切断高压泵。请立即排查还原剂加药系统：检查计量泵膜片是否破裂、背压阀是否堵塞或药箱是否抽空。' 
+                },
+                { 
+                    name: '⚠ 多介质过滤器进水压差过大 (0.15MPa)', 
+                    solution: '滤层可能严重板结，建议立即在控制台开启强制气水联合反洗，并适当延长反洗时间以彻底松动滤料。' 
+                }
+            ];
+            
+            // 定时器 1：正常事件，每 1 分钟 (60000毫秒) 触发一次
+            setInterval(() => {
+                sysEventsList.push({
+                    id: Date.now(),
+                    time: new Date().toLocaleTimeString('zh-CN', {hour12:false}),
+                    name: normalMsgs[Math.floor(Math.random() * normalMsgs.length)],
+                    status: 'normal',
+                    solution: ''
+                });
+                if(sysEventsList.length > 100) sysEventsList.shift();
+                renderSysEvents(); 
+            }, 60000); 
+
+            // 定时器 2：预警事件，每 5 分钟 (300000毫秒) 触发一次，并直接弹窗！
+            setInterval(() => {
+                const warnObj = warnMsgs[Math.floor(Math.random() * warnMsgs.length)];
+                const newId = Date.now();
+                sysEventsList.push({
+                    id: newId,
+                    time: new Date().toLocaleTimeString('zh-CN', {hour12:false}),
+                    name: warnObj.name,
+                    status: 'warn',
+                    solution: warnObj.solution
+                });
+                if(sysEventsList.length > 100) sysEventsList.shift();
+                renderSysEvents(); 
+                
+                // 💥 触发预警的同时，立刻呼出中央强弹窗给出文字解决方案 💥
+                openAlertModal(newId);
+            }, 300000); 
+        };
+
+        // ================= 8. 系统配置新逻辑 =================
+        let currentConfigPane = 'user-mgmt';
+        let editingUserId = null;
+
+        // ═══ 用户数据 ═══
+        let userList = [
+            { id: 1, username: 'admin', password: '123456', group: 'admin', created: '2025-01-01 08:00' },
+            { id: 2, username: 'product01', password: '123456', group: 'product', created: '2025-03-15 10:30' },
+            { id: 3, username: 'ops01', password: '123456', group: 'ops', created: '2025-06-01 14:00' }
+        ];
+        let userIdCounter = 4;
+
+        window.renderUserTable = function() {
+            const tbody = document.getElementById('user-table-body');
+            if (!tbody) return;
+            let html = '';
+            const groupNames = { admin: 'Admin组', product: '产品组', ops: '运营组' };
+            userList.forEach(u => {
+                html += `<tr>
+                    <td>${u.username}</td>
+                    <td>${groupNames[u.group] || u.group}</td>
+                    <td>${u.created}</td>
+                    <td>
+                        <button class="nav-btn" style="padding:2px 8px; font-size:11px; margin:0 2px;" onclick="startEditUser(${u.id})">✏️</button>
+                        <button class="nav-btn" style="padding:2px 8px; font-size:11px; margin:0 2px; border-color:#ff4d4f; color:#ff4d4f;" onclick="deleteUser(${u.id})">🗑️</button>
+                    </td>
+                </tr>`;
+            });
+            if (userList.length === 0) html = '<tr><td colspan="4" style="color:#666;">暂无用户数据</td></tr>';
+            tbody.innerHTML = html;
+        };
+
+        window.addUser = function() {
+            const uname = document.getElementById('um-username').value.trim();
+            const pwd = document.getElementById('um-password').value.trim();
+            const group = document.getElementById('um-group').value;
+            if (!uname || !pwd) return alert('用户名和密码不能为空！');
+            if (userList.find(u => u.username === uname)) return alert('用户名已存在！');
+            const now = new Date();
+            const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            userList.push({ id: userIdCounter++, username: uname, password: pwd, group: group, created: ts });
+            document.getElementById('um-username').value = '';
+            document.getElementById('um-password').value = '';
+            renderUserTable();
+        };
+
+        window.startEditUser = function(id) {
+            const u = userList.find(u => u.id === id);
+            if (!u) return;
+            editingUserId = id;
+            document.getElementById('um-edit-pwd').value = '';
+            document.getElementById('um-edit-group').value = u.group;
+            document.getElementById('um-edit-row').style.display = 'flex';
+        };
+
+        window.saveEditUser = function() {
+            if (!editingUserId) return;
+            const u = userList.find(u => u.id === editingUserId);
+            if (!u) return;
+            const newPwd = document.getElementById('um-edit-pwd').value.trim();
+            const newGroup = document.getElementById('um-edit-group').value;
+            if (newPwd) u.password = newPwd;
+            u.group = newGroup;
+            cancelEditUser();
+            renderUserTable();
+        };
+
+        window.cancelEditUser = function() {
+            editingUserId = null;
+            document.getElementById('um-edit-row').style.display = 'none';
+        };
+
+        window.deleteUser = function(id) {
+            if (!confirm('确认删除该用户？')) return;
+            userList = userList.filter(u => u.id !== id);
+            if (editingUserId === id) cancelEditUser();
+            renderUserTable();
+        };
+
+        // ═══ 权限数据 ═══
+        const permItems = ['系统配置','厂区总览','工艺流程','专家库','AI预测中心','数据分析','查看报表','导出Excel'];
+        let permData = {
+            admin:   { '系统配置':true, '厂区总览':true, '工艺流程':true, '专家库':true, 'AI预测中心':true, '数据分析':true, '查看报表':true, '导出Excel':true },
+            product: { '系统配置':false,'厂区总览':true, '工艺流程':true, '专家库':true, 'AI预测中心':true, '数据分析':true, '查看报表':true, '导出Excel':true },
+            ops:     { '系统配置':false,'厂区总览':true, '工艺流程':true, '专家库':true, 'AI预测中心':true, '数据分析':true, '查看报表':true, '导出Excel':false }
+        };
+
+        window.renderPermTable = function() {
+            const tbody = document.getElementById('perm-table-body');
+            if (!tbody) return;
+            const groupNames = { admin: 'Admin组', product: '产品组', ops: '运营组' };
+            let html = '';
+            ['admin','product','ops'].forEach(g => {
+                html += '<tr>';
+                html += `<td style="font-weight:bold; color:#00f3ff;">${groupNames[g]}</td>`;
+                permItems.forEach(p => {
+                    const checked = permData[g][p] ? 'checked' : '';
+                    html += `<td><input type="checkbox" data-group="${g}" data-perm="${p}" ${checked} style="cursor:pointer;" onchange="updatePermCell(this)"></td>`;
+                });
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+        };
+
+        window.updatePermCell = function(cb) {
+            const g = cb.dataset.group;
+            const p = cb.dataset.perm;
+            permData[g][p] = cb.checked;
+        };
+
+        // ═══ 报警触发条件 ═══
+        const alarmPresets = {
+            tmp:   { name: '超滤TMP超限', threshold: '≥0.12 MPa', level: '高' },
+            orp:   { name: 'RO进水ORP超限', threshold: '≥280 mV', level: '高' },
+            press: { name: '过滤器压差异常', threshold: '≥0.15 MPa', level: '中' },
+            turb:  { name: '产水浊度超标', threshold: '≥0.5 NTU', level: '中' },
+            cond:  { name: 'RO产水电导率超标', threshold: '≥20 μS/cm', level: '中' }
+        };
+        let alarmTriggerList = [
+            { name: '超滤TMP超限', threshold: '≥0.12 MPa', level: '高', preset: 'tmp' },
+            { name: 'RO进水ORP超限', threshold: '≥280 mV', level: '高', preset: 'orp' }
+        ];
+
+        window.renderAlarmTriggers = function() {
+            const tbody = document.getElementById('alm-trigger-body');
+            if (!tbody) return;
+            let html = '';
+            alarmTriggerList.forEach((a, idx) => {
+                const lvlColor = a.level === '高' ? '#ff4d4f' : a.level === '中' ? '#ffeb3b' : '#00fa9a';
+                html += `<tr>
+                    <td>${a.name}</td>
+                    <td>${a.threshold}</td>
+                    <td style="color:${lvlColor}; font-weight:bold;">${a.level}</td>
+                    <td style="color:#8898aa;">${alarmPresets[a.preset] ? alarmPresets[a.preset].name : '自定义'}</td>
+                    <td><button class="nav-btn" style="padding:2px 8px; font-size:11px; border-color:#ff4d4f; color:#ff4d4f;" onclick="deleteAlarmTrigger(${idx})">删除</button></td>
+                </tr>`;
+            });
+            if (alarmTriggerList.length === 0) html = '<tr><td colspan="5" style="color:#666;">暂无报警触发条件</td></tr>';
+            tbody.innerHTML = html;
+        };
+
+        window.applyAlarmPreset = function() {
+            const sel = document.getElementById('alm-trigger-preset').value;
+            if (!sel) return;
+            const preset = alarmPresets[sel];
+            if (preset) {
+                document.getElementById('alm-trigger-name').value = preset.name;
+            }
+        };
+
+        window.addAlarmTrigger = function() {
+            const nameEl = document.getElementById('alm-trigger-name');
+            const presetEl = document.getElementById('alm-trigger-preset');
+            const name = nameEl.value.trim();
+            const presetKey = presetEl.value;
+            if (!name) return alert('请输入触发条件名称！');
+            const preset = alarmPresets[presetKey];
+            const entry = {
+                name: name,
+                threshold: preset ? preset.threshold : '待定义',
+                level: preset ? preset.level : '中',
+                preset: presetKey || 'custom'
+            };
+            alarmTriggerList.push(entry);
+            nameEl.value = '';
+            presetEl.value = '';
+            renderAlarmTriggers();
+        };
+
+        window.deleteAlarmTrigger = function(idx) {
+            alarmTriggerList.splice(idx, 1);
+            renderAlarmTriggers();
+        };
+
+        // ═══ 事件配置子页切换 ═══
+        window.switchEventSubTab = function(sub, btn) {
+            const btns = btn.parentElement.querySelectorAll('.config-card-btn');
+            btns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('ev-sub-events').style.display = sub === 'events' ? 'block' : 'none';
+            document.getElementById('ev-sub-alarms').style.display = sub === 'alarms' ? 'block' : 'none';
+            document.getElementById('ev-sub-models').style.display = sub === 'models' ? 'block' : 'none';
+            if (sub === 'models') renderModelStatusTable();
+        };
+
+        // ═══ 事件配置V2 ═══
+        window.renderEventV2Table = function() {
+            const tbody = document.getElementById('ev2-table-body');
+            if (!tbody) return;
+            const sorted = [...sysEventsList].sort((a, b) => b.id - a.id);
+            let html = '';
+            sorted.forEach((ev, idx) => {
+                let statusText = ev.status === 'warn' ? '<span style="color:#ff4d4f">预警</span>' :
+                                (ev.status === 'resolved' ? '<span style="color:#00f3ff">已解决</span>' : '<span style="color:#00fa9a">正常</span>');
+                html += `<tr>
+                    <td>${ev.time}</td>
+                    <td style="color:#fff;">${ev.name}</td>
+                    <td>${statusText}</td>
+                    <td><button class="nav-btn" style="padding:2px 8px; font-size:11px; border-color:#ff4d4f; color:#ff4d4f;" onclick="deleteSysEventById(${ev.id})">删除</button></td>
+                </tr>`;
+            });
+            if (sorted.length === 0) html = '<tr><td colspan="4" style="color:#666;">暂无事件</td></tr>';
+            tbody.innerHTML = html;
+        };
+
+        window.addEventV2 = function() {
+            const nameEl = document.getElementById('ev2-name');
+            const statusEl = document.getElementById('ev2-status');
+            const solEl = document.getElementById('ev2-solution');
+            if (!nameEl.value.trim()) return alert('请输入事件名称！');
+            sysEventsList.push({
+                id: Date.now(),
+                time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+                name: nameEl.value.trim(),
+                status: statusEl.value,
+                solution: solEl.value.trim() || '暂无推荐方案。'
+            });
+            if (sysEventsList.length > 100) sysEventsList.shift();
+            nameEl.value = ''; solEl.value = '';
+            renderEventV2Table();
+            renderSysEvents();
+            if (typeof filterEventTable === 'function') filterEventTable();
+        };
+
+        window.deleteSysEventById = function(id) {
+            sysEventsList = sysEventsList.filter(e => e.id !== id);
+            renderEventV2Table();
+            renderSysEvents();
+            if (typeof filterEventTable === 'function') filterEventTable();
+        };
+
+        // ═══ 专家库配置V2 ═══
+        function escapeExpertConfigHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        window.renderExpertConfigTable = function() {
+            const tbody = document.getElementById('expert-config-tbody');
+            if (!tbody) return;
+            let html = '';
+            mockExpertData.forEach((item, idx) => {
+                html += `<tr>
+                    <td style="color:#fff;">${escapeExpertConfigHtml(item.error)}</td>
+                    <td style="font-size:11px;">${escapeExpertConfigHtml(item.cause)}</td>
+                    <td style="font-size:11px;">${escapeExpertConfigHtml(item.fix)}</td>
+                    <td><button class="nav-btn" style="padding:2px 8px; font-size:11px; border-color:#ff4d4f; color:#ff4d4f;" onclick="deleteExpertEntry(${idx})">删除</button></td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        };
+
+        window.addExpertEntry = function() {
+            const err = document.getElementById('new-expert-error').value.trim();
+            const cause = document.getElementById('new-expert-cause').value.trim();
+            const fix = document.getElementById('new-expert-fix').value.trim();
+            if (!err) return alert('请输入故障现象！');
+            mockExpertData.push({ error: err, cause: cause || '(待补充)', fix: fix || '(待补充)' });
+            document.getElementById('new-expert-error').value = '';
+            document.getElementById('new-expert-cause').value = '';
+            document.getElementById('new-expert-fix').value = '';
+            renderExpertConfigTable();
+            if (window.ExpertAssistant) window.ExpertAssistant.persistRules();
+        };
+
+        window.deleteExpertEntry = function(idx) {
+            mockExpertData.splice(idx, 1);
+            renderExpertConfigTable();
+            if (window.ExpertAssistant) window.ExpertAssistant.persistRules();
+        };
+
+        // ═══ 模型状态管理 ═══
+        const cfgModelNames = {
+            m1:'超滤膜清洗指令模型', m2:'反渗透膜清洗指令模型', m3:'双膜清洗指令模型',
+            m4:'超滤膜健康度评估模型', m5:'超滤膜健康度预测模型', m6:'超滤膜产水水质预测模型',
+            m7:'各仪表损坏预测模型', m8:'反渗透膜健康度评估模型', m9:'反渗透膜健康度预测模型',
+            m10:'反渗透产水水质预测模型', m11:'RO膜污染类型评估模型'
+        };
+        const cfgStatusLabels = { running: '运行中', training: '训练中', dormant: '已休眠' };
+
+        window.renderModelStatusTable = function() {
+            const tbody = document.getElementById('model-status-tbody');
+            if (!tbody) return;
+            let html = '';
+            for (let i = 1; i <= 11; i++) {
+                const key = 'm' + i;
+                const status = aiModelStates ? aiModelStates[key] : 'running';
+                const label = cfgStatusLabels[status] || '运行中';
+                const color = status === 'running' ? '#00fa9a' : status === 'training' ? '#ffeb3b' : '#9e9e9e';
+                html += `<tr>
+                    <td>${i}</td>
+                    <td style="color:#fff;">${cfgModelNames[key]}</td>
+                    <td style="color:${color}; font-weight:bold;">${label}</td>
+                    <td>
+                        <select id="cfg-model-${key}" style="background:rgba(0,243,255,0.05); border:1px solid rgba(0,243,255,0.3); color:#fff; padding:3px 6px; font-size:11px; border-radius:3px;">
+                            <option value="running" ${status==='running'?'selected':''}>运行中</option>
+                            <option value="training" ${status==='training'?'selected':''}>训练中</option>
+                            <option value="dormant" ${status==='dormant'?'selected':''}>已休眠</option>
+                        </select>
+                    </td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+        };
+
+        window.saveModelStatusOverrides = function() {
+            if (!aiModelStates) return;
+            for (let i = 1; i <= 11; i++) {
+                const key = 'm' + i;
+                const sel = document.getElementById('cfg-model-' + key);
+                if (sel) aiModelStates[key] = sel.value;
+            }
+            try { localStorage.setItem('lefilm_ai_model_states', JSON.stringify(aiModelStates)); } catch(e) {}
+            if (typeof renderModelList === 'function') renderModelList();
+        };
+
+        // ═══ 统一保存 ═══
+        window.saveCurrentConfig = function() {
+            try {
+                localStorage.setItem('lefilm_user_list', JSON.stringify(userList));
+                localStorage.setItem('lefilm_perm_data', JSON.stringify(permData));
+                localStorage.setItem('lefilm_alarm_triggers', JSON.stringify(alarmTriggerList));
+            } catch(e) {}
+            saveModelStatusOverrides();
+            applyPermissions();
+            updateSystemStatus();
+            alert('✅ 配置已保存！');
+        };
+
+        // ═══ 权限全局生效 ═══
+        window.applyPermissions = function() {
+            const currentUserGroup = 'admin';
+            const perms = permData[currentUserGroup] || permData['admin'];
+            const sysConfigBtn = document.getElementById('btn-sys-config');
+            if (sysConfigBtn) sysConfigBtn.style.display = perms['系统配置'] ? '' : 'none';
+            const reportBtns = document.querySelectorAll('[data-perm="exportExcel"]');
+            reportBtns.forEach(b => { b.style.display = perms['导出Excel'] ? '' : 'none'; });
+        };
+
+        // ═══ 初始化加载 ═══
+        function initConfigData() {
+            try {
+                const savedUsers = localStorage.getItem('lefilm_user_list');
+                if (savedUsers) userList = JSON.parse(savedUsers);
+                const savedPerms = localStorage.getItem('lefilm_perm_data');
+                if (savedPerms) permData = JSON.parse(savedPerms);
+                const savedAlarms = localStorage.getItem('lefilm_alarm_triggers');
+                if (savedAlarms) alarmTriggerList = JSON.parse(savedAlarms);
+                if (userList.length > 0) userIdCounter = Math.max(...userList.map(u => u.id)) + 1;
+            } catch(e) {}
+        }
+
+        // 弹窗打开时刷新各表格
+        const origOpenConfigModal = openConfigModal;
+        openConfigModal = function() {
+            origOpenConfigModal();
+            renderUserTable();
+            renderPermTable();
+            renderExpertConfigTable();
+            renderEventV2Table();
+            renderAlarmTriggers();
+        };
+        // 预置 12 种水厂双膜系统真实典型故障库
+        const mockExpertData = [
+            { 
+                error: "超滤压差偏高", 
+                cause: "1. 原水浊度突增导致滤料堵塞；2. 超滤膜表面有机物污染严重；3. 气洗强度不足。", 
+                fix: "立即执行加强型物理反洗（增加气洗时长至5min）；若跨膜压差(TMP)仍未下降，需安排NaClO+NaOH化学加强反洗(CEB)。" 
+            },
+            { 
+                error: "反渗透电导率升高", 
+                cause: "1. 某支膜元件存在机械破损；2. 膜壳内部O型密封圈老化或移位导致原水短路；3. 膜表面发生严重氧化。", 
+                fix: "使用电导率仪对RO机架进行分段/单支探伤检测，定位具体漏盐管位；检查并更换受损的膜元件或O型圈。" 
+            },
+            { 
+                error: "反渗透高压泵异响", 
+                cause: "1. 泵入口保安过滤器脏堵，导致进水供液不足产生气蚀；2. 泵轴承严重磨损或缺油；3. 进水含有微小气泡。", 
+                fix: "立即停泵检查进水压力；开启排气阀排净管路空气；若压力正常但持续异响，需拆解电机检查轴承并补充润滑脂。" 
+            },
+            { 
+                error: "超滤产水浊度超标", 
+                cause: "1. 超滤膜丝发生断裂；2. 超滤产水阀门内漏混入原水。", 
+                fix: "将不合格产水排至前端水池；对超滤膜组件进行气泡完整性测试（衰减测试），找出断丝组件并进行“拔销堵孔”处理。" 
+            },
+            { 
+                error: "反渗透产水量下降 (流量不足)", 
+                cause: "1. 进水温度过低（水温每降1℃产水量下降约3%）；2. 膜表面存在无机盐结垢或胶体污染。", 
+                fix: "核对进水温度并参考温度校正系数；根据运行参数判定污染类型，安排酸洗（除垢）或碱洗（除有机物）。" 
+            },
+            { 
+                error: "阻垢剂加药泵不打药", 
+                cause: "1. 药箱液位抽空导致泵头进气；2. 加药背压阀堵塞；3. 泵隔膜破损。", 
+                fix: "补充药液并拧开泵头排气螺栓进行手动排气；拆卸并清洗注射阀；检查膜片是否破裂泄漏。" 
+            },
+            { 
+                error: "多介质过滤器进水压力高", 
+                cause: "1. 滤层截留悬浮物过多，发生板结；2. 进水或出水电动蝶阀未完全打开。", 
+                fix: "检查阀门反馈信号；启动强制气水联合反洗程序，必要时延长反洗时间以彻底松动滤料。" 
+            },
+            { 
+                error: "保安过滤器压差上升过快", 
+                cause: "1. 前端超滤产水质量不稳定；2. 滤芯使用寿命到期或表面形成黏液微生态。", 
+                fix: "检查超滤出水水质；停机打开保安过滤器外壳，清洗内壁并更换全新的 5μm 熔喷滤芯。" 
+            },
+            { 
+                error: "反渗透浓水流量异常降低", 
+                cause: "1. 浓水调节阀卡涩或执行器故障；2. 膜元件尾端严重结垢堵塞了浓水通道。", 
+                fix: "手动调节浓水阀门确认是否响应；复核系统当前回收率，若回收率偏高则降低进水压力并增加浓水排放。" 
+            },
+            { 
+                error: "ORP氧化还原电位偏高", 
+                cause: "1. 原水余氯超标；2. 还原剂（亚硫酸氢钠）加药系统故障或药量不足。", 
+                fix: "紧急切断RO进水以免氧化烧毁RO膜！立即检查还原剂加药泵运行状态，重新配制浓度合适的还原剂药液。" 
+            },
+            { 
+                error: "PLC系统通讯故障/断线", 
+                cause: "1. 现场控制柜内工业交换机死机或电源模块损坏；2. 光纤或网线接头松动；3. 强电磁干扰。", 
+                fix: "首先将关键水泵和阀门切换至现场就地手动控制柜操作以保生产；检查交换机供电状态并尝试重启网络设备。" 
+            },
+            { 
+                error: "产水pH值异常偏低", 
+                cause: "1. 进水含较高的游离二氧化碳，透过反渗透膜后生成碳酸；2. 终端加碱调节系统未投运。", 
+                fix: "启动脱气塔吹脱 CO2 气体；检查 NaOH 加药管路及计量泵是否正常注入调节脱盐水 pH 值。" 
+            },
+            // --- 以下为仪器仪表及自动化设备专属故障 ---
+            { 
+                error: "在线pH计示数异常波动", 
+                cause: "1. 玻璃电极老化或受污染（如被硅酸盐、胶体包裹）；2. 参参比电极液路堵塞或KCl溶液耗尽；3. 信号线受到变频器等强电设备电磁干扰。", 
+                fix: "使用标准缓冲液(pH 4.0/6.86/9.18)进行两点或三点校准；用稀盐酸清洗电极表面；若校准失败则更换电极；检查仪表接地与信号线屏蔽层。" 
+            },
+            { 
+                error: "在线电磁流量计示数不变或回零", 
+                cause: "1. 管道内未充满水（非满管状态）；2. 电极表面结垢严重形成绝缘层；3. 变送器进水受潮；4. 流体电导率过低（低于5μS/cm，纯水中常见）。", 
+                fix: "确认管路排气并处于满管状态；如果是RO产水（纯水），需改用转子流量计或超声波流量计；停机清空管路后，拆开清理测量电极。" 
+            },
+            { 
+                error: "液位变送器（静压式/超声波）反馈错误", 
+                cause: "1. 静压式探头被水池底部的污泥包裹；2. 超声波探头表面结露或有水珠；3. 水面泡沫过多导致超声波信号吸收散失。", 
+                fix: "静压式：提升探头位置并清洗感压膜片。超声波式：擦拭探头表面凝露，若水面泡沫多，建议加装静水管（导波管）或更换为雷达液位计。" 
+            },
+            { 
+                error: "压力变送器读数严重漂移", 
+                cause: "1. 引压管或膜盒内进入空气；2. 冬季气温过低导致引压管内水结冰膨胀；3. 感压膜片因水锤冲击而产生永久性塑性变形。", 
+                fix: "缓慢拧开变送器排气/排液阀门进行排气；检查保温伴热系统是否正常工作；若归零后仍无法消除偏差，需更换整个膜盒或传感器。" 
+            },
+            { 
+                error: "在线浊度仪（散射光式）测量值偏高", 
+                cause: "1. 测量流通池内壁附着气泡；2. 透镜表面结垢或被污染；3. 原水中色度干扰（深色水体会吸收散射光导致误差）。", 
+                fix: "调节进水阀门增加流速以冲走气泡，或加装脱泡器；使用柔软湿布配合专用清洗液擦拭光学透镜；执行零点和福尔马肼标准液校准。" 
+            },
+            { 
+                error: "气动蝶阀动作迟缓或无法到位", 
+                cause: "1. 仪用压缩空气压力不足（低于0.4MPa）；2. 电磁阀（先导阀）线圈烧毁或阀芯卡涩；3. 蝶阀阀板被管路内的大块异物卡住。", 
+                fix: "检查空压机及储气罐输出压力；手动按下电磁阀测试钮观察气缸动作；检查执行机构限位开关位置；必要时排空管路拆解清理阀板。" 
+            },
+            // ═══ 新增多样化场景：运行异常 / 工艺波动 / 设备状态 ═══
+            { 
+                error: "超滤膜化学清洗后通量恢复不理想", 
+                cause: "1. 清洗液浓度不足或浸泡时间过短；2. 污染物类型判定错误，使用了不对症的清洗药剂；3. 膜丝已发生不可逆深层污染。", 
+                fix: "取样分析膜表面污染物成分（EDS/XRF）；根据分析结果重新选择匹配的清洗方案（酸洗/碱洗/氧化剂清洗）；适当提高清洗温度至35-40℃并延长循环时间至2h以上。" 
+            },
+            { 
+                error: "反渗透一段与二段压差分布异常", 
+                cause: "1. 一段膜元件前端结垢严重导致一段压降升高；2. 二段浓水侧浓度极化加剧；3. 段间增压泵未正常投入或频率设定偏低。", 
+                fix: "对比设计参数与当前各段运行数据；对一段膜壳进行单壳取样化验；若一段压差持续升高，安排在线化学清洗；核查段间泵运行电流与频率。" 
+            },
+            { 
+                error: "原水箱液位异常快速下降", 
+                cause: "1. 前端来水主管路破裂或阀门误关；2. 原水提升泵变频器故障导致进水量骤减；3. 排水底阀卡涩未完全关闭。", 
+                fix: "立即巡检原水管路及阀门开度；检查原水泵运行频率与电流变化趋势；若液位低于保护值，系统应自动联锁停运后端设备防止水泵空转。" 
+            },
+            { 
+                error: "自清洗过滤器频繁自动排污", 
+                cause: "1. 原水悬浮物含量异常升高（暴雨/管道冲洗期间常见）；2. 滤网孔径选择偏小或局部破损；3. 压差设定值过低导致过于灵敏。", 
+                fix: "检查原水水质在线浊度仪读数趋势；核实滤网规格是否匹配当前水质工况；适当上调排污压差启动值（建议0.05→0.08MPa）；若滤网破损需停机更换。" 
+            },
+            { 
+                error: "UF产水箱液位持续高位但RO产水偏低", 
+                cause: "1. RO高压泵入口压力不足或泵效率下降；2. RO膜元件产水通道堵塞（生物污堵）；3. UF产水至RO之间管路存在异常分流。", 
+                fix: "测量高压泵进出口压力并与出厂曲线对比；若膜污染则执行化学清洗；沿管路逐段排查阀门开度及可能的旁路泄漏点。" 
+            },
+            { 
+                error: "CIP清洗系统加热温度上不去", 
+                cause: "1. 蒸汽加热盘管表面严重结垢导致换热效率低；2. 蒸汽减压阀故障或疏水阀堵塞；3. 清洗液循环量不足导致温度分布不均。", 
+                fix: "停机检查并化学清洗换热盘管；检测蒸汽侧疏水阀是否正常排水；增加清洗泵循环流量，确保罐体内温度均匀性。" 
+            },
+            { 
+                error: "加药系统计量泵出口压力波动大", 
+                cause: "1. 泵进口管路存在气蚀或药液含气泡；2. 泵单向阀（进出口球阀）磨损导致内漏；3. 脉冲阻尼器气囊破裂失效。", 
+                fix: "检查药液箱液位并排尽管路气体；拆检并清洗/更换单向阀组件；检查阻尼器充气压力并更换破损气囊。" 
+            },
+            { 
+                error: "RO产水箱出水电导率间歇性跳变", 
+                cause: "1. RO产水侧与浓水侧之间O型圈间歇性泄漏；2. 产水电导率仪探头表面周期性附着气泡；3. 膜元件端面适配器密封老化。", 
+                fix: "在电导率仪取样口加装脱泡器消除气泡干扰；对每支膜壳逐个取样定位泄漏单元；停机更换老化密封件并重新紧固端板。" 
+            },
+            { 
+                error: "系统整体产水率持续缓慢下降（月均下降3%+）", 
+                cause: "1. 膜元件进入正常老化阶段，通量自然衰减；2. 进水污染物长期累积导致膜面积垢增厚；3. 预处理工艺（多介质过滤器/自清洗过滤器）去除效率下降。", 
+                fix: "比对膜元件运行时间与出厂通量衰减曲线；制定周期性化学清洗计划（建议3-6个月一次）；评估前端预处理是否需要技改升级。" 
+            },
+            { 
+                error: "夜间低负荷运行时RO产水电导率偏高", 
+                cause: "1. 低流量时膜面浓差极化效应加剧；2. 夜间进水温度波动导致膜性能变化；3. 产水背压阀在低流量区调节精度不足。", 
+                fix: "适当提高夜间最低产水量设定值（避免低于设计值40%）；调整浓水回流阀开度增加膜面流速；检查产水背压阀的调节特性曲线。" 
+            },
+            { 
+                error: "UF物理反洗时产水侧出现瞬时浊度升高", 
+                cause: "1. 反洗水压力过高导致膜丝与环氧树脂密封层产生微裂隙；2. 反洗水泵启动时产生的水锤冲击；3. 膜组件端部配水不均匀。", 
+                fix: "降低反洗水泵起始频率，采用变频缓启动消除水锤；检查反洗水压力不超过膜元件允许值（通常≤0.25MPa）；对产水浊度持续超标的膜组件进行气泡测试。" 
+            }
+        ];
+        // 保留原有配置页对数组的引用；专家库脚本在不改动页面结构的前提下负责本地持久化。
+        window.ExpertRules = {
+            get: () => mockExpertData,
+            replace: (nextRules) => mockExpertData.splice(0, mockExpertData.length, ...nextRules)
+        };
+        
+        // ═══ 专家库搜索历史 ═══
+        let expertSearchHistory = [];
+        const expertHotSearches = ['压差偏高', '电导率升高', '产水量下降', '浊度超标', '高压泵异响', 'ORP偏高', '加药泵故障', 'PLC断线'];
+        
+        function loadExpertHistory() {
+            try {
+                const saved = localStorage.getItem('lefilm_expert_history');
+                expertSearchHistory = saved ? JSON.parse(saved) : [];
+            } catch(e) { expertSearchHistory = []; }
+        }
+        
+        function saveExpertHistory(keyword) {
+            expertSearchHistory = expertSearchHistory.filter(k => k !== keyword);
+            expertSearchHistory.unshift(keyword);
+            if (expertSearchHistory.length > 12) expertSearchHistory.pop();
+            try { localStorage.setItem('lefilm_expert_history', JSON.stringify(expertSearchHistory)); } catch(e) {}
+        }
+        
+        function renderExpertHistory() {
+            const tagsEl = document.getElementById('expert-history-tags');
+            const clearBtn = document.getElementById('btn-clear-history');
+            if (!tagsEl) return;
+            tagsEl.replaceChildren(...expertSearchHistory.slice(0, 8).map(createExpertTag));
+            if (clearBtn) clearBtn.style.display = expertSearchHistory.length > 0 ? '' : 'none';
+        }
+        
+        function renderExpertHot() {
+            const tagsEl = document.getElementById('expert-hot-tags');
+            if (!tagsEl) return;
+            tagsEl.replaceChildren(...expertHotSearches.map(k => createExpertTag(k, true)));
+        }
+
+        function cleanExpertAlertName(value) {
+            return String(value || '').replace(/^\s*[⚠️!]+\s*/, '').trim();
+        }
+
+        function renderExpertRecentAlerts() {
+            const row = document.getElementById('expert-alert-row');
+            const alertsEl = document.getElementById('expert-recent-alerts');
+            if (!row || !alertsEl) return;
+            const alerts = typeof window.getRecentExpertAlerts === 'function'
+                ? window.getRecentExpertAlerts()
+                : [];
+            row.hidden = alerts.length === 0;
+            alertsEl.replaceChildren(...alerts.map(alert => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'expert-alert-item';
+                const name = cleanExpertAlertName(alert.name);
+                item.title = `带入专家分析：${name}`;
+                item.setAttribute('aria-label', `分析最新预警 ${alert.time}：${name}`);
+                item.innerHTML = '<span class="expert-alert-time"></span><span class="expert-alert-name"></span><span class="expert-alert-arrow" aria-hidden="true">↗</span>';
+                item.querySelector('.expert-alert-time').textContent = String(alert.time || '--:--');
+                item.querySelector('.expert-alert-name').textContent = name;
+                item.addEventListener('click', () => window.searchExpertByAlert(alert));
+                return item;
+            }));
+        }
+        window.renderExpertRecentAlerts = renderExpertRecentAlerts;
+
+        function createExpertTag(keyword, isHot) {
+            const tag = document.createElement('button');
+            tag.type = 'button';
+            tag.className = isHot
+                ? 'expert-suggestion-item is-suggested'
+                : 'expert-suggestion-item is-history';
+            tag.textContent = keyword;
+            tag.addEventListener('click', () => searchExpertByTag(keyword));
+            return tag;
+        }
+        
+        window.clearExpertHistory = function() {
+            expertSearchHistory = [];
+            localStorage.removeItem('lefilm_expert_history');
+            renderExpertHistory();
+        };
+        
+        window.searchExpertByTag = function(keyword) {
+            const inputEl = document.getElementById('expert-search');
+            if (inputEl) {
+                inputEl.value = keyword;
+                if (window.ExpertAssistant) {
+                    document.getElementById('expert-submit')?.click();
+                    return;
+                }
+                inputEl.dispatchEvent(new Event('input'));
+            }
+        };
+
+        window.searchExpertByAlert = function(alert) {
+            const inputEl = document.getElementById('expert-search');
+            if (!inputEl || !alert) return;
+            const normalizedAlert = {
+                id: alert.id,
+                time: String(alert.time || ''),
+                name: cleanExpertAlertName(alert.name)
+            };
+            inputEl.value = `请分析最新预警（${normalizedAlert.time}）：${normalizedAlert.name}。请给出优先核验项和建议补充数据。`;
+            if (window.ExpertAssistant) {
+                window.ExpertAssistant.selectAlarm(normalizedAlert);
+                document.getElementById('expert-submit')?.click();
+                return;
+            }
+            inputEl.dispatchEvent(new Event('input'));
+        };
+        
+        loadExpertHistory();
+        renderExpertHistory();
+        renderExpertHot();
+        renderExpertRecentAlerts();
+        
+        const expertSearchInput = document.getElementById('expert-search');
+        if(expertSearchInput) {
+            expertSearchInput.placeholder = "继续追问，或描述新的异常…";
+            
+            expertSearchInput.addEventListener('input', function(e) {
+                const keyword = e.target.value.trim();
+                const resultBox = document.getElementById('expert-results');
+
+                if (window.ExpertAssistant) {
+                    if (keyword === '') window.ExpertAssistant.search('');
+                    return;
+                }
+                
+                if(keyword === '') { 
+                    resultBox.innerHTML = '<p style="color:#888; text-align:center; margin-top:20px;">请在上方输入设备异常现象检索专家方案...</p>'; 
+                    return; 
+                }
+                
+                function highlight(text, kw) {
+                    if (!kw) return text;
+                    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    return text.replace(new RegExp(escaped, 'gi'), m => `<mark style="background:#ffeb3b; color:#020917; padding:0 2px; border-radius:2px; font-weight:bold;">${m}</mark>`);
+                }
+                
+                const matches = mockExpertData.filter(item => 
+                    item.error.includes(keyword) || 
+                    item.cause.includes(keyword) || 
+                    item.fix.includes(keyword)
+                );
+                
+                if(matches.length > 0) {
+                    saveExpertHistory(keyword);
+                    renderExpertHistory();
+                    resultBox.innerHTML = matches.map(m => `
+                        <div class="expert-card">
+                            <h4 class="expert-card-title">🔍 匹配现象：${highlight(m.error, keyword)}</h4>
+                            <div class="expert-section">
+                                <span class="expert-label-cause">❓ 原因分析：</span>
+                                <span class="expert-text">${highlight(m.cause, keyword)}</span>
+                            </div>
+                            <div class="expert-section">
+                                <span class="expert-label-fix">🛠️ 解决预案：</span>
+                                <span class="expert-text">${highlight(m.fix, keyword)}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    resultBox.innerHTML = `
+                        <div style="text-align: center; padding: 20px;">
+                            <p style="color:#ff4d4f; font-size:40px; margin:0 0 10px 0;">⚠️</p>
+                            <p style="color:#ff4d4f;">本地知识库未检索到“${keyword}”相关解决方案</p>
+                            <p style="color:#8898aa; font-size: 13px;">建议联系原厂设备工程师进行深度排查。</p>
+                        </div>`;
+                }
+            });
+        }
+
+        // ================= 6. AI 智能生产预测渲染逻辑 =================
+        const aiData = {
+            uf: {
+                health: 88,
+                physWashTime: "02:15:30",
+                physWashDetail: "【气洗-气量：50m³/h（时长：3min），反洗-水量：150m³/h（时长：2min），正洗-水量：100m³/h（时长：1min）】",
+                cebWashTime: "18:45:00",
+                cebWashDetail: "【气洗-气量：50m³/h（时长：3min），反洗-水量：150m³/h（时长：2min），药洗-NaClO（药量：5L），正洗-水量：100m³/h（时长：2min）】",
+                cipWashDetail: "【参数待定】"
+            },
+            ro: {
+                health: 95,
+                chemWashTime: "48:00:00",
+                chemWashDetail: "【药洗-专用清洗剂（药量25L）】"
+            }
+        };
+
+        function getHealthColor(val) {
+            if(val > 80) return "linear-gradient(90deg, #00fa9a, #00f3ff)";
+            if(val > 60) return "linear-gradient(90deg, #ffeb3b, #ff9800)";
+            return "linear-gradient(90deg, #ff4d4f, #ff0000)";
+        }
+
+        function renderUF() {
+            return `
+                <div class="ai-item" style="border-left-color: #00fa9a;">
+                    <div class="ai-item-title"><span>超滤膜(UF) 健康度评估</span> <span class="ai-time">${aiData.uf.health}%</span></div>
+                    <div class="ai-health-bar"><div class="ai-health-fill" style="width: ${aiData.uf.health}%; background: ${getHealthColor(aiData.uf.health)};"></div></div>
+                </div>
+                <div class="ai-item">
+                    <div class="ai-item-title"><span>预计下次 UF 物理清洗</span> <span class="ai-time">${aiData.uf.physWashTime}</span></div>
+                    <div class="ai-item-detail">${aiData.uf.physWashDetail}</div>
+                </div>
+                <div class="ai-item">
+                    <div class="ai-item-title"><span>预计下次 UF CEB 清洗</span> <span class="ai-time">${aiData.uf.cebWashTime}</span></div>
+                    <div class="ai-item-detail">${aiData.uf.cebWashDetail}</div>
+                </div>
+                <div class="ai-item">
+                    <div class="ai-item-title"><span>预计下次 UF CIP 清洗</span> <span class="ai-time">--:--:--</span></div>
+                    <div class="ai-item-detail" style="color: #ff4d4f;">${aiData.uf.cipWashDetail}</div>
+                </div>
+            `;
+        }
+
+        function renderRO() {
+            return `
+                <div class="ai-item" style="border-left-color: #00fa9a;">
+                    <div class="ai-item-title"><span>反渗透膜(RO) 健康度评估</span> <span class="ai-time">${aiData.ro.health}%</span></div>
+                    <div class="ai-health-bar"><div class="ai-health-fill" style="width: ${aiData.ro.health}%; background: ${getHealthColor(aiData.ro.health)};"></div></div>
+                </div>
+                <div class="ai-item">
+                    <div class="ai-item-title"><span>预计下次 RO 化学清洗</span> <span class="ai-time">${aiData.ro.chemWashTime}</span></div>
+                    <div class="ai-item-detail">${aiData.ro.chemWashDetail}</div>
+                </div>
+            `;
+        }
+
+        function switchAIMode(mode, btnElement) {
+            if(btnElement) {
+                document.querySelectorAll('.ai-tab').forEach(b => b.classList.remove('active'));
+                btnElement.classList.add('active');
+            }
+            const container = document.getElementById('ai-dynamic-content');
+            if(!container) return;
+            if (mode === 'uf') container.innerHTML = renderUF();
+            else if (mode === 'ro') container.innerHTML = renderRO();
+            else if (mode === 'dual') container.innerHTML = renderUF() + renderRO();
+        }
+
+        // ================= 7. 系统统一启动引擎 =================
+        window.addEventListener('load', () => {
+            // 启动时钟与默认状态
+            startLiveClock();
+            initConfigData();
+            applyPermissions();
+            updateSystemStatus();
+            
+            // 强制渲染 AI 预测双膜数据
+            const defaultBtn = document.querySelector('.ai-tab.active');
+            switchAIMode('dual', defaultBtn);
+
+            // 启动报警定时器
+            scheduleAlerts();
+        });
+    </script>
+    <script src="vendor/lucide/lucide.min.js"></script>
+    <script src="js/expert-runtime-config.js?v=20260828-opencode-go-v2"></script>
+    <script src="js/expert-assistant.js?v=20260828-expert-chat-v4"></script>
+    <script type="module" src="js/main_site3d.js?v=20260828-3d19"></script>
+    </body>
+</html>
